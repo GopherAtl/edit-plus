@@ -4,8 +4,13 @@
 
 if not hilight then
   --search for it
-  local searchPaths={"/",shell.dir().."/","apis/",shell.getRunningProgram():match("^(.-/)%w+$"),"/usr/lib/","/lib/"}
+  local searchPaths={"/",shell.dir().."/","apis/",shell.getRunningProgram():match("^(.-/)[^/]+$"),"/usr/lib/","/lib/"}
   for i=1,#searchPaths do
+
+    if searchPaths[i]==nil then
+      print(shell.getRunningProgram())
+      print(shell.getRunningProgram():match("^(.-/)%w+$"))
+    end
     if fs.exists(searchPaths[i].."hilight") then
       os.loadAPI(searchPaths[i].."hilight")
       break
@@ -71,6 +76,13 @@ local function curToTextPos(curPos)
     index=math.min(curPos.x+scrollPos.x-1,#lines[lineNum].rawText+1)
   end
   return {x=index,y=lineNum}
+end
+
+local function textToCurPos(textPos)
+  return {
+      x=textPos.x-scrollPos.x+1,
+      y=textPos.y-scrollPos.y+1,
+  }
 end
 
 
@@ -197,6 +209,7 @@ end
 
 local function doCursor()
   term.setCursorPos(trueCurPos())
+  term.setTextColor(colors.white)
   term.setCursorBlink(true)
 end
 
@@ -315,6 +328,7 @@ local function deleteSelection()
   if selectBounds then
     local startY,endY=selectBounds[1].y,selectBounds[2].y
     local selectBounds=selectBounds
+    curPos=textToCurPos(selectBounds[1])
     updateSelect()
     if startY==endY then
       local text=lines[startY].rawText
@@ -325,7 +339,7 @@ local function deleteSelection()
         table.remove(lines,startY+1)
       end
       updateLine(startY,newText)
-      redrawFrom(curPos.y+1)
+      redrawFrom(startY-scrollPos.y+2)
     end
   end
 end
@@ -383,13 +397,11 @@ local function run()
 
   term.setTextColor(colors.white)
   term.setBackgroundColor(colors.black)
-  term.setCursorPos(1,h)
-  term.scroll(1)
   if not succ and err then
-    print("Program '"..filePath.."' crashed with error:")
+    print("\nProgram '"..filePath.."' crashed with error:")
     printError(err)
   else
-    print("program exited normally")
+    print("\nprogram exited normally")
   end
   write("press a key to return to editor")
   e={os.pullEvent("key")}
@@ -456,7 +468,7 @@ local function paste()
       table.insert(lines,lineNum+i-1,{state={}})
       updateLine(lineNum+i-1,newLines[i],i==#newLines)
     end
-    redrawFrom(lineNum)
+    redrawFrom(lineNum-scrollPos.y+1)
     --new cursor pos will be in that last line
     if #newLines>1 then
       cursorDown(#newLines-1)
@@ -777,8 +789,18 @@ while running do
       end
       updateSelect()
       doCursor()
+    elseif key==keys.tab then
+      deleteSelection()
+      --get the affected line and actual x position in line
+      local lineNum, index = curTextPos()
+      local line=lines[lineNum]
+      --insert our char!
+      local left,right=line.rawText:sub(1,index-1),line.rawText:sub(index)
+      local tab=#left%2==0 and "  " or " "
+      curPos.x=index+#tab
+      updateLine(lineNum,left..tab..right)
+      doCursor()
     end
-
   elseif e[1]=="char" then
     local char=e[2]
     if selectBounds then
@@ -825,11 +847,11 @@ while running do
     local dragTo=curToTextPos({x=math.min(math.max(e[3],1),w),y=math.min(math.max(e[4],1),h)})
     dragTo.x=math.min(dragTo.x,#lines[dragTo.y].rawText)
     local newBounds
-    local dragFrom=lastClickPos
+    local dragFrom=curToTextPos(lastClickPos)
     if dragTo.y<dragFrom.y or (dragTo.y==dragFrom.y and dragTo.x<dragFrom.x) then
-      newBounds={dragTo,curToTextPos(dragFrom)}
+      newBounds={dragTo,dragFrom}
     else
-      newBounds={curToTextPos(dragFrom),dragTo}
+      newBounds={dragFrom,dragTo}
     end
     updateSelect(newBounds)
   elseif e[1]=="term_resize" then
