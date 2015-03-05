@@ -344,6 +344,50 @@ local function deleteSelection()
   end
 end
 
+local function decreaseIndent()
+  if selectBounds then
+    for y=selectBounds[1].y,selectBounds[2].y do
+      local text=lines[y].rawText
+      local tab=text:match("^  ?")
+      if tab then
+        updateLine(y,text:sub(1+#tab))
+        if y==curPos.y+scrollPos.y-1 then
+          curPos.x=math.max(1,curPos.x-#tab)
+        end
+      end
+    end
+    redrawFrom(selectBounds[1].y-scrollPos.y+1)
+  else
+    local lineNum,index=curTextPos()
+    local text=lines[lineNum].rawText
+    local tab=text:match("^  ?")
+    if tab then
+      updateLine(lineNum,text:sub(1+#tab))
+      curPos.x=math.max(1,curPos.x-#tab)
+    end
+  end
+end
+
+local function increaseIndent()
+  if selectBounds then
+    for y=selectBounds[1].y,selectBounds[2].y do
+      updateLine(y,"  "..lines[y].rawText)
+      if y==curPos.y+scrollPos.y-1 then
+        curPos.x=curPos.x+2
+      end
+    end
+    redrawFrom(selectBounds[1].y-scrollPos.y+1)
+  else
+    local lineNum,index=curTextPos()
+    local text=lines[lineNum].rawText
+    local tab=text:match("^  ?")
+    if tab then
+      updateLine(lineNum,text:sub(1+#tab))
+      curPos.x=math.max(1,curPos.x-#tab)
+    end
+  end
+end
+
 
 local function save()
   file=io.open(filePath,"w")
@@ -615,6 +659,9 @@ local function doMenu()
       elseif e[2]==keys.enter then
         --do the thing
         break
+      elseif e[2]==keys.tab then
+        decreaseIndent()
+        break
       end
     elseif e[1]=="char" then
       if hkMap[e[2]] then
@@ -790,15 +837,18 @@ while running do
       updateSelect()
       doCursor()
     elseif key==keys.tab then
-      deleteSelection()
-      --get the affected line and actual x position in line
-      local lineNum, index = curTextPos()
-      local line=lines[lineNum]
-      --insert our char!
-      local left,right=line.rawText:sub(1,index-1),line.rawText:sub(index)
-      local tab=#left%2==0 and "  " or " "
-      curPos.x=index+#tab
-      updateLine(lineNum,left..tab..right)
+      if selectBounds then
+        increaseIndent()
+      else
+        --get the affected line and actual x position in line
+        local lineNum, index = curTextPos()
+        local line=lines[lineNum]
+        --insert our char!
+        local left,right=line.rawText:sub(1,index-1),line.rawText:sub(index)
+        local tab=#left%2==0 and "  " or " "
+        curPos.x=index+#tab
+        updateLine(lineNum,left..tab..right)
+      end
       doCursor()
     end
   elseif e[1]=="char" then
