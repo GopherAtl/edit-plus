@@ -1,0 +1,831 @@
+--[===============================================]
+
+--edit+
+
+os.unloadAPI("hilight")
+os.loadAPI("hilight")
+
+if hilight==nil then
+  error("hilight not loaded?")
+end
+
+local args={...}
+
+local filename=args[1]
+
+if not filename then
+  print("usage:\nedit+ <filename>")
+  return
+end
+
+local filePath=shell.dir().."/"..filename
+local lines={}
+
+local prevState
+
+do
+  local prevState={}
+  local file=io.open(filePath,"r")
+  if file~=nil then
+    for line in file:lines() do
+      lines[#lines+1]=hilight.hilightToSpans(line,prevState)
+      prevState=lines[#lines].state
+    end
+    file:close()
+  else
+    lines[1]={rawText="",state={}}
+  end
+end
+
+
+
+
+term.clear()
+
+local running=true
+local w,h=term.getSize()
+local scrollPos={x=1,y=1}
+local curPos={x=1,y=1}
+local selectBounds
+local lastClickPos={x=1,y=1}
+local clipboard
+
+local function curToTextPos(curPos)
+  local lineNum=curPos.y+scrollPos.y-1
+  local index
+  if lineNum>#lines then
+    lineNum=#lines
+    index=#lines[#lines].rawText+1
+  else
+    index=math.min(curPos.x+scrollPos.x-1,#lines[lineNum].rawText+1)
+  end
+  return {x=index,y=lineNum}
+end
+
+
+local function drawLineNum()
+  lineNum=" "..tostring(scrollPos.y+curPos.y-1).." "
+  term.setCursorPos(w-#lineNum+1,h)
+  term.setBackgroundColor(colors.white)
+  term.setTextColor(colors.black)
+  term.write(lineNum)
+  term.setBackgroundColor(colors.black)
+  term.setTextColor(colors.white)
+end
+
+local function redrawLine(screenLine)
+  local lineNum=screenLine+scrollPos.y-1
+  if lineNum<=#lines then
+    local selStart,selEnd=0,-1
+    local spans=lines[lineNum]
+    if selectBounds and selectBounds[1].y<=lineNum and selectBounds[2].y>=lineNum then
+      --we'll be doing selecting here
+      selStart,selEnd=1,#spans.rawText+1
+      if selectBounds[1].y==lineNum then
+        selStart=selectBounds[1].x
+      end
+      if selectBounds[2].y==lineNum then
+        selEnd=selectBounds[2].x
+      end
+    end
+
+    term.setCursorPos(2-scrollPos.x,screenLine)
+    local index=1
+    for i=1,#spans do
+      local len=#spans[i].text
+      local subStart,subEnd=1,len
+      if index>selEnd or index+len-1<selStart then
+        subStart,subEnd=len+1,len+1
+      else
+        if selStart>=index then
+          subStart=selStart-index+1
+        end
+        if selEnd<index+len-1 then
+          subEnd=len - (index+len-1 - selEnd)
+        end
+      end
+      if subStart>1 then
+        term.setTextColor(spans[i].color)
+        term.write(spans[i].text:sub(1,subStart-1))
+      end
+      if subStart~=len+1 then
+        term.setTextColor(term.isColor() and colors.white or colors.black)
+        term.setBackgroundColor(term.isColor() and colors.blue or colors.white)
+        term.write(spans[i].text:sub(subStart,subEnd))
+        term.setBackgroundColor(colors.black)
+      end
+      if subEnd<len then
+        term.setTextColor(spans[i].color)
+        term.write(spans[i].text:sub(subEnd+1))
+      end
+      index=index+len
+    end
+    if selEnd>#spans.rawText then
+      term.setBackgroundColor(term.isColor() and colors.blue or colors.white)
+      term.write(" ")
+      term.setBackgroundColor(colors.black)
+    end
+
+    local x,y=term.getCursorPos()
+    term.write((" "):rep(math.max(0,w-x+1)))
+  else
+    term.setCursorPos(1,screenLine)
+    term.write((" "):rep(w))
+  end
+  if screenLine==h then
+    drawLineNum()
+  end
+end
+
+local function redrawFrom(index)
+  for y=index,h do
+    redrawLine(y)
+  end
+end
+
+local function updateSelect(newBounds)
+  local startY,endY
+  if selectBounds then
+    if newBounds then
+      startY,endY=math.min(selectBounds[1].y,newBounds[1].y),math.max(selectBounds[2].y,newBounds[2].y)
+    else
+      startY,endY=selectBounds[1].y,selectBounds[2].y
+    end
+  elseif newBounds then
+    startY,endY=newBounds[1].y,newBounds[2].y
+  else
+    return
+  end
+  selectBounds=newBounds
+  for i=startY-scrollPos.y+1,endY-scrollPos.y+1 do
+    if i>=1 and i<=h then
+      redrawLine(i)
+    end
+  end
+end
+
+
+local function cursorRow()
+  return lines[curPos.y+scrollPos.y-1]
+end
+
+local function trueCurPos()
+  local cx,cy=curPos.x,curPos.y
+  local row=cursorRow()
+  cx=math.min(cx,#row.rawText-scrollPos.x+2)
+  return cx,cy
+end
+
+
+local function curTextPos()
+  local lineNum=curPos.y+scrollPos.y-1
+  local index=math.min(curPos.x+scrollPos.x-1,#lines[lineNum].rawText+1)
+  return lineNum,index
+end
+
+
+local function doCursor()
+  term.setCursorPos(trueCurPos())
+  term.setCursorBlink(true)
+end
+
+local function setScrollX(pos)
+  local lineNum,index=curTextPos()
+  local target=math.max(math.min(pos,#lines[lineNum].rawText-w+2),1)
+  if target~=scrollPos.x then
+    scrollPos.x=target
+    redrawFrom(1)
+  end
+end
+
+local function scrollY(offset)
+  local didScroll=false
+  local target=math.max(math.min(scrollPos.y+offset,#lines-h+1),1)
+  if target~=scrollPos.y then
+    didScroll=true
+    --correct if it was clamped
+    offset=target-scrollPos.y
+    term.scroll(offset)
+    scrollPos.y=target
+    for i=1,offset+1 do
+      redrawLine(h-i+1)
+    end
+    for i=-1,offset,-1 do
+      redrawLine(-i)
+    end
+  end
+  return didScroll
+end
+
+local function gotoLine(lineNum)
+  local curY=lineNum-scrollPos.y+1
+  if curY<1 then
+    scrollY(lineNum-scrollPos.y)
+    curPos.y=1
+    redraw=true
+  elseif curY>h then
+    scrollY(lineNum-h+1 - scrollPos.y)
+    curPos.y=h
+    redraw=true
+  else
+    curPos.y=lineNum-scrollPos.y+1
+  end
+  if curPos.x~=1 then
+    curPos.x=1
+    redraw=true
+  end
+  if redraw then
+    redrawFrom(1)
+  end
+end
+
+
+local function cursorDown(amt)
+  updateSelect()
+  amt=amt or 1
+  if #lines<curPos.y+amt+scrollPos.y-1 then
+    amt=#lines-curPos.y-scrollPos.y+1
+  end
+  if amt>0 then
+    if curPos.y+amt>h then
+      scrollY(amt-(h-curPos.y))
+      curPos.y=h
+    elseif curPos.y<#lines then
+      curPos.y=curPos.y+amt
+    end
+  end
+end
+
+local function cursorUp(amt)
+  updateSelect()
+  amt=amt or 1
+  if curPos.y-amt<1 then
+    scrollY(curPos.y-1-amt)
+    curPos.y=1
+  else
+    curPos.y=curPos.y-amt
+  end
+  drawLineNum()
+end
+
+
+local function updateLine(lineNum,newText,noProp)
+local prevLineState={}
+  if lineNum>1 then
+    prevLineState=lines[lineNum-1].state
+  end
+  local line=lines[lineNum]
+  local prevEndState=line.state
+  line=hilight.hilightToSpans(newText,prevLineState)
+  lines[lineNum]=line
+  redrawLine(curPos.y)
+  --check for an end state change and flag to propagate
+  if not hilight.compareStates(line.state,prevEndState) then
+    local prevState=line.state
+    --for now just redoing whole file if needed, will make it incremental and/or deferred later
+    if not noProp then
+      for i=lineNum+1,#lines do
+        prevEndState=lines[i].state
+        lines[i]=hilight.hilightToSpans(lines[i].rawText,prevState)
+        if i-scrollPos.y+1 <= h then
+          redrawLine(i-scrollPos.y+1)
+        end
+        prevState=lines[i].state
+        --stop iterating if the state returns to expected
+        if hilight.compareStates(prevState,prevEndState) then
+          break
+        end
+      end
+    end
+  end
+end
+
+local function deleteSelection()
+  if selectBounds then
+    local startY,endY=selectBounds[1].y,selectBounds[2].y
+    local selectBounds=selectBounds
+    updateSelect()
+    if startY==endY then
+      local text=lines[startY].rawText
+      updateLine(startY,text:sub(1,selectBounds[1].x-1)..text:sub(selectBounds[2].x+1))
+    else
+      local newText=lines[startY].rawText:sub(1,selectBounds[1].x-1,noProp)..lines[endY].rawText:sub(selectBounds[2].x+1)
+      for i=startY+1,endY do
+        table.remove(lines,startY+1)
+      end
+      updateLine(startY,newText)
+      redrawFrom(startY+1)
+    end
+  end
+end
+
+
+local function save()
+  file=io.open(filePath,"w")
+  if file then
+    for i=1,#lines do
+      if i~=1 then
+        file:write("\n")
+      end
+      file:write(lines[i].rawText)
+    end
+    file:close()
+  end
+end
+
+local function load()
+  --TODO: file dialog
+end
+
+local function new()
+  --TODO: file dialog
+  --actually, just make new, with filename nil'd, and do
+  --file dialog on save if filename is nil.
+  --will facilitate saveAs also.
+end
+
+local function help()
+  --not much point for this until advanced mode is added, actually?
+end
+
+local charKeys={[57]=' ', [43]='\\', [83]='.', [2]='1', [3]='2', [4]='3', [5]='4', [6]='5', [7]='6', [8]='7', [9]='8', [10]='9', [11]='0', [12]='-', [13]='=', [51]=',', [52]='.', [53]='/', [181]='/', [55]='*', [26]='[', [27]=']', [71]='7', [72]='8', [73]='9', [74]='-', [75]='4', [76]='5', [77]='6', [78]='+', [79]='1', [80]='2', [81]='3', [39]=';', [40]='"', [41]='`', [82]='0', [30]='a', [48]='b', [46]='c', [32]='d', [18]='e', [33]='f', [34]='g', [35]='h', [23]='i', [36]='j', [37]='k', [38]='l', [50]='m', [49]='n', [24]='o', [25]='p', [16]='q', [19]='r', [31]='s', [20]='t', [22]='u', [47]='v', [17]='w', [45]='x', [21]='y', [44]='z', }
+
+local runEnv={shell=shell, multishell=multishell}
+setmetatable(runEnv,{__index=_G})
+
+local function run()
+  --save changes first
+  save()
+  term.setTextColor(colors.white)
+  term.setBackgroundColor(colors.black)
+  term.clear()
+  term.setCursorPos(1,1)
+
+  local succ,err
+  local func=loadfile(filename)
+  if not func then
+    succ,err=pcall(dofile,filename)
+  else
+    setfenv(func,runEnv)
+    succ,err=pcall(func)
+  end
+
+  term.setTextColor(colors.white)
+  term.setBackgroundColor(colors.black)
+  term.setCursorPos(1,h)
+  term.scroll(1)
+  if not succ and err then
+    print("Program '"..filename.."' crashed with error:")
+    printError(err)
+  else
+    print("program exited normally")
+  end
+  write("press a key to return to editor")
+  e={os.pullEvent("key")}
+  if charKeys[e[2]] then os.pullEvent() end
+  if not succ then
+    local lineNum,text=err:match(filename..":(%d+):(.-)")
+    if lineNum then
+      gotoLine(tonumber(lineNum))
+    end
+  end
+  term.clear()
+  redrawFrom(1)
+  doCursor()
+end
+
+local function exit()
+  return true
+end
+
+local function copy()
+  if selectBounds then
+    local startY,endY=selectBounds[1].y,selectBounds[2].y
+    local selectBounds=selectBounds
+    clipboard={}
+    if startY==endY then
+      clipboard[1]=lines[startY].rawText:sub(selectBounds[1].x,selectBounds[2].x)
+    else
+      clipboard[1]=lines[startY].rawText:sub(selectBounds[1].x)
+      for y=startY+1,endY-1 do
+        clipboard[#clipboard+1]=lines[y].rawText
+      end
+      clipboard[#clipboard+1]=lines[endY].rawText:sub(1,selectBounds[2].x)
+    end
+  end
+end
+
+local function cut()
+  copy()
+  deleteSelection()
+end
+
+local function paste()
+  if clipboard then
+    local lineNum,index=curTextPos()
+    --delete selection, if any, as we'll replace
+    deleteSelection()
+    --split this line at cursor
+    local before,after=lines[lineNum].rawText:sub(1,index-1),lines[lineNum].rawText:sub(index)
+    local newLines={}
+    --append first cb line to before for first line
+    newLines[1]=before..clipboard[1]
+    --rest will be new lines
+    for i=2,#clipboard do
+      newLines[i]=clipboard[i]
+    end
+    --append after to last
+    local newX=#newLines[#newLines]+1
+    newLines[#newLines]=newLines[#newLines]..after
+
+    --ok, update first line
+    updateLine(lineNum,newLines[1],true)
+    --insert rest
+    for i=2,#newLines do
+      table.insert(lines,lineNum+i-1,{state={}})
+      updateLine(lineNum+i-1,newLines[i],i==#newLines)
+    end
+    redrawFrom(lineNum)
+    --new cursor pos will be in that last line
+    if #newLines>1 then
+      cursorDown(#newLines-1)
+    end
+    curPos.x=newX
+  end
+end
+
+
+local basicMenu={
+    "&save",
+--    "&load",
+--    "&new",
+--    "help-&?",
+    "&run",
+    "&exit",
+--    "&advanced",
+    "&copy",
+    "cut-&x",
+    "paste-&v",
+    funcs={
+      save=save,
+      load=load,
+      new=new,
+      help=help,
+      run=run,
+      exit=exit,
+
+      copy=copy,
+      cut=cut,
+      paste=paste
+    },
+}
+
+redrawFrom(1)
+term.setCursorBlink(true)
+doCursor()
+
+local function writeMenuLabel(menuItem,selected)
+  local pre,pk,hk,post=menuItem:match("^(%a*)(%-?)&(.)(%a*)")
+  if not pre then
+    error("malformed menu label - '"..menuItem.."'")
+  end
+  local label=" "
+  local func=pre
+  term.setBackgroundColor(selected and colors.blue or colors.gray)
+  term.setTextColor(colors.white)
+  term.write(" "..pre)
+  if pk~="-" then
+    func=func..hk..post
+    term.setTextColor(colors.yellow)
+    term.write(hk)
+    term.setTextColor(colors.white)
+    term.write(post)
+    label=label..pre..hk..post
+  else
+    term.write("-")
+    term.setTextColor(colors.yellow)
+    term.write(hk)
+    label=label..pre.."-"..hk
+  end
+  term.write(" ")
+  label=label.." "
+  return func,hk,label
+end
+
+local function doMenu()
+  --root menu
+  --          |15                      |40(26)       |54(39)
+  local buttonMap={}
+  local hkMap={}
+  local command
+  local selected=1
+  local function drawMenu(menu)
+    local menuStr=""
+    for i=1,#menu do
+      local itemStr=(selected==i and "[" or " ")
+      local pre,pk,hk,post=menu[i]:match("^(%a*)(%-?)&(.)(%a*)")
+      itemStr=itemStr..pre
+      local cmd=pre
+      if pk=="" then
+        itemStr=itemStr.."("..hk..")"..post
+        cmd=cmd..hk..post
+      else
+        itemStr=itemStr.."("..hk..")"
+      end
+      itemStr=itemStr..(selected==i and "]" or " ")
+      for j=1,#itemStr do
+        buttonMap[#buttonMap+1]={i,cmd}
+      end
+      menuStr=menuStr..itemStr
+    end
+    term.setCursorPos(1,h)
+    term.setTextColor(colors.black)
+    term.setBackgroundColor(colors.white)
+    term.write(menuStr)
+    term.setBackgroundColor(colors.black)
+  end
+  if term.isColor() then
+    drawMenu=function(menu)
+      term.setCursorPos(1,h)
+      for i=1,selected-1 do
+        local cmd,hk,label=writeMenuLabel(menu[i])
+        for j=1,#label do
+          buttonMap[#buttonMap+1]={i,cmd}
+          hkMap[hk]=cmd
+        end
+      end
+      local cmd,hk,label=writeMenuLabel(menu[selected],true)
+      command=cmd
+      for j=1,#label do
+        buttonMap[#buttonMap+1]={selected,cmd}
+      end
+      hkMap[hk]=cmd
+      menuStr=""
+      for i=selected+1,#menu do
+        local cmd,hk,label=writeMenuLabel(menu[i])
+        for j=1,#label do
+          buttonMap[#buttonMap+1]={i,cmd}
+        end
+        hkMap[hk]=cmd
+      end
+      term.setTextColor(colors.black)
+      term.setBackgroundColor(colors.lightGray)
+      term.write(menuStr)
+      term.setBackgroundColor(colors.black)
+    end
+  end
+
+  --           new save load help exit more
+  while true do
+    drawMenu(basicMenu)
+    local e={os.pullEvent()}
+    if e[1]=="key" then
+      if e[2]==keys.leftCtrl then
+        command=nil
+        break
+      elseif e[2]==keys.right then
+        selected=selected%#basicMenu+1
+      elseif e[2]==keys.left then
+        selected=selected==1 and #basicMenu or selected-1
+      elseif e[2]==keys.enter then
+        --do the thing
+        break
+      end
+    elseif e[1]=="char" then
+      if hkMap[e[2]] then
+        command=hkMap[e[2]]
+        break
+      end
+    elseif e[1]=="mouse_click" then
+      local _,btn,x,y=unpack(e)
+      if y==h and buttonMap[x] then
+        selected=buttonMap[x][1]
+        if btn==1 then
+          command=buttonMap[x][2]
+          break
+        end
+      else
+        break
+      end
+    end
+
+  end
+
+  if basicMenu.funcs[command] and basicMenu.funcs[command]() then
+    running=false
+  else
+    redrawLine(h)
+    doCursor()
+  end
+
+end
+
+
+while running do
+
+  local e={os.pullEvent()}
+
+  if e[1]=="key" then
+    local key=e[2]
+    if key==keys.down then
+      cursorDown()
+      drawLineNum()
+      doCursor()
+    elseif key==keys.up then
+      cursorUp()
+      drawLineNum()
+      doCursor()
+    elseif key==keys.right then
+      local lineNum,index=curTextPos()
+      if curPos.x>index then
+        curPos.x=index
+      end
+      if curPos.x+scrollPos.x-1>#lines[lineNum].rawText then
+        cursorDown()
+        drawLineNum()
+        setScrollX(1)
+        curPos.x=1
+      else
+        if curPos.x==w then
+          setScrollX(scrollPos.x+1)
+        else
+          curPos.x=curPos.x+1
+        end
+      end
+      updateSelect()
+      doCursor()
+    elseif key==keys.left then
+      if curPos.x==1 then
+        cursorUp()
+        curPos.x=#cursorRow().rawText+1
+        if curPos.x>w then
+          setScrollX(curPos.x-w+1)
+          curPos.x=w
+        end
+        drawLineNum()
+      else
+        curPos.x=curPos.x-1
+      end
+      updateSelect()
+      doCursor()
+    elseif key==keys.pageDown then
+      if not scrollY(h) then
+        curPos.y=math.min(h,#lines)
+      end
+      updateSelect()
+      doCursor()
+    elseif key==keys.pageUp then
+      if not scrollY(-h) then
+        curPos.y=1
+      end
+      updateSelect()
+      doCursor()
+    elseif key==keys.leftCtrl then
+      doMenu()
+    elseif key==keys.enter then
+      if selectBounds then
+        deleteSelection()
+      end
+      --carry on with the cr
+      local lineNum,index=curTextPos()
+      local curText=lines[lineNum].rawText
+      local pre,post=curText:sub(1,index-1),curText:sub(index)
+      updateLine(lineNum,pre,true)
+      table.insert(lines,lineNum+1,{state={}})
+      updateLine(lineNum+1,post)
+      if curPos.y==h then
+        cursorDown()
+      else
+        curPos.y=curPos.y+1
+      end
+      curPos.x=1
+      redrawFrom(curPos.y-1)
+      doCursor()
+    elseif key==keys.backspace then
+      if selectBounds then
+        deleteSelection()
+      else
+        local lineNum,index=curTextPos()
+        if index==1 then
+          if lineNum>1 then
+            local prevLine=lines[lineNum-1]
+            curPos.x=#prevLine.rawText+1
+            local curLine=table.remove(lines,lineNum)
+
+            updateLine(lineNum-1,prevLine.rawText..curLine.rawText)
+            curPos.y=curPos.y-1
+            redrawFrom(curPos.y)
+            drawLineNum()
+          end
+        else
+          local curText=lines[lineNum].rawText
+          local newText=curText:sub(1,index-2)..curText:sub(index)
+          updateLine(lineNum,newText)
+          curPos.x=index-1
+        end
+      end
+      doCursor()
+    elseif key==keys.delete then
+      if selectBounds then
+        deleteSelection()
+      else
+        local lineNum,index=curTextPos()
+        local curText=lines[lineNum].rawText
+        if index==#curText+1 then
+          if lineNum<#lines then
+            local nextLine=table.remove(lines,lineNum+1)
+            updateLine(lineNum,curText..nextLine.rawText)
+            redrawFrom(curPos.y)
+          end
+        else
+          local newText=curText:sub(1,index-1)..curText:sub(index+1)
+          updateLine(lineNum,newText)
+          curPos.x=index
+        end
+      end
+      doCursor()
+    elseif key==keys.home then
+      setScrollX(1)
+      curPos.x=1
+      updateSelect()
+      doCursor()
+    elseif key==keys["end"] then
+      local max=#cursorRow().rawText+1
+      if max>w then
+        local target=max-w+1
+        if target>scrollPos.x then
+          setScrollX(target)
+          curPos.x=w
+        else
+          curPos.x=max - scrollPos.x
+        end
+      else
+        curPos.x=max
+      end
+      updateSelect()
+      doCursor()
+    end
+
+  elseif e[1]=="char" then
+    local char=e[2]
+    if selectBounds then
+      deleteSelection()
+    end
+    --get the affected line and actual x position in line
+    local lineNum, index = curTextPos()
+    local line=lines[lineNum]
+    --insert our char!
+    local newText=line.rawText:sub(1,index-1)..char..line.rawText:sub(index)
+    curPos.x=index+1
+    updateLine(lineNum,newText)
+    doCursor()
+
+  elseif e[1]=="mouse_scroll" then
+    if e[2]>0 then
+      cursorDown()
+    else
+      cursorUp()
+    end
+    drawLineNum()
+    doCursor()
+
+  elseif e[1]=="mouse_click" then
+    if e[2]==1 then
+      local x,y=math.min(math.max(e[3],1),w),math.min(math.max(e[4],1),h)
+      if y+scrollPos.y-1 > #lines then
+        curPos.y=#lines
+        curPos.x=#lines[#lines].rawText+1
+      else
+        curPos.x=x
+        curPos.y=y
+      end
+      updateSelect()
+      drawLineNum()
+      doCursor()
+      lastClickPos={x=x,y=y}
+    elseif e[2]==2 then
+
+    elseif e[2]==3 then
+
+    end
+  elseif e[1]=="mouse_drag" then
+    local dragTo=curToTextPos({x=math.min(math.max(e[3],1),w),y=math.min(math.max(e[4],1),h)})
+    dragTo.x=math.min(dragTo.x,#lines[dragTo.y].rawText)
+    local newBounds
+    local dragFrom=lastClickPos
+    if dragTo.y<dragFrom.y or (dragTo.y==dragFrom.y and dragTo.x<dragFrom.x) then
+      newBounds={dragTo,curToTextPos(dragFrom)}
+    else
+      newBounds={curToTextPos(dragFrom),dragTo}
+    end
+    updateSelect(newBounds)
+  elseif e[1]=="term_resize" then
+    w,h=term.getSize()
+    redrawFrom(1)
+    doCursor()
+  end
+
+end
+
+term.clear()
+term.setCursorPos(1,1)

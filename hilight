@@ -1,0 +1,243 @@
+--[[
+syntax hilighting
+
+syntax hilighting methods
+
+default colorscheme is based on pastebin's, but
+more will be implemented later
+--]]
+
+
+local keywords={
+  ["and"]=true, ["break"]=true, ["do"]=true, ["else"]=true, ["elseif"]=true,
+  ["end"]=true, ["false"]=true, ["for"]=true, ["function"]=true, ["if"]=true,
+  ["in"]=true, ["local"]=true, ["nil"]=true, ["not"]=true, ["or"]=true,
+  ["repeat"]=true, ["return"]=true, ["then"]=true, ["true"]=true, ["until"]=true,
+  ["while"]=true,
+}
+
+local hilight={
+  keyword=colors.yellow,
+  identifier=colors.white,
+  number=colors.magenta,
+  string=colors.pink,
+  comment=colors.gray,
+  operator=colors.green,
+  ["error"]=colors.red,
+}
+
+function writeHilight(line, state, target)
+  --tokenize
+  if not target.isColor() then
+    target.setTextColor(colors.white)
+    target.write(line)
+    return
+  end
+  target=target or term
+  while #line>0 do
+    if state.inComment then
+      --look for end of comment block
+      local comment,blockEnd,space,rest = line:match("^(.-)("..state.blockEnd..")(%s*)(.*)$")
+      target.setTextColor(hilight.comment)
+      if comment then
+        target.write(comment..blockEnd..space)
+        state.inComment=false
+        state.blockEnd=nil
+        line=rest
+      else
+        target.write(line)
+        break
+      end
+    elseif state.inString then
+      local str,blockEnd,space,rest = line:match("^(.-)("..state.blockEnd..")(%s*)(.*)$")
+      target.setTextColor(hilight.string)
+      if str then
+        target.write(str..blockEnd..space)
+        state.inString=false
+        state.blockEnd=nil
+        line=rest
+      else
+        target.write(line)
+        break
+      end
+    else
+
+      local word,space,rest=line:match("^([%a_][%a%d_]*)(%s*)(.*)$")
+      if word then
+        line=rest
+        if keywords[word] then
+          target.setTextColor(hilight.keyword)
+        else
+          target.setTextColor(hilight.identifier)
+        end
+        target.write(word..space)
+      else
+        local comment,rest=line:match("^(%-%-)(.*)$")
+        target.setTextColor(hilight.comment)
+        if comment then
+          local block,mid,rest2 = rest:match("^(%[(=*)%[)(.*)$")
+          if block then
+            --begins block comment!
+            state.inComment=true
+            state.blockEnd="%]"..mid.."%]"
+            line=rest2
+            target.write(comment..block)
+          else
+            target.write(comment..rest)
+            break
+          end
+        else
+          local strBlk,mid,rest=line:match("^(%[(=*)%[)(.*)$")
+          if strBlk then
+            state.inString=true
+            state.blockEnd="%]"..mid.."%]"
+            line=rest
+            target.setTextColor(hilight.string)
+            target.write(strBlk)
+          else
+            local op,space,rest=line:match("^([%+%-%(%)%[%]%{%}/%*=<>%^:#~,]+)(%s*)(.-)$")
+            if op then
+              line=rest
+              target.setTextColor(hilight.operator)
+              target.write(op..space)
+            else
+              local hex,space,rest=line:match("^(0x[%da-fA-F]*)(%s*)(.-)")
+              if hex then
+                line=rest
+                target.setTextColor(hilight.number)
+                target.write(hex..space)
+              else
+                local number,space,rest=line:match("^([%d]*%.?[%d]+)(%s*)(.-)$")
+                if number then
+                  line=rest
+                  target.setTextColor(hilight.number)
+                  target.write(number..space)
+                else
+                  local op,space,rest=line:match("^([%.]+)(%s*)(.-)$")
+                  if op then
+                    line=rest
+                    target.setTextColor(hilight.operator)
+                    target.write(op..space)
+                  else
+                    local strTok, rest = line:match("^([\"'])(.-)$")
+                    if strTok then
+                      line=rest
+                      --find end
+                      local str=""
+                      local unterminated
+                      while true do
+                        local temp
+                        temp,_,rest=line:match("^([^"..strTok.."]*)("..strTok..")(.*)$")
+                        if temp then
+                          line=rest
+                          str=str..temp
+                          if temp:sub(#temp)~="\\" then
+                            break
+                          end
+                          str=str..strTok
+                        else
+                          unterminated=true
+                          str=str..line
+                          break
+                        end
+                      end
+                      if unterminated then
+                        target.setTextColor(hilight.error)
+                        target.write(strTok..str)
+                        break
+                      else
+                        target.setTextColor(hilight.string)
+                        target.write(strTok..str..strTok)
+                      end
+                    else
+                      local space,rest=line:match("^(%s+)(.*)$")
+                      if space then
+                        line=rest
+                        target.write(space)
+                      else
+                        if #line>0 then
+                          target.setTextColor(hilight.error)
+                          target.write(line)
+                        end
+                        break
+                      end
+                    end
+                  end
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+  target.setTextColor(colors.white)
+end
+
+function copyState(state)
+  local state2={}
+  if state then
+    for k,v in pairs(state) do
+      state2[k]=v
+    end
+  end
+  return state2
+end
+
+function hilightToSpans(text,prevState)
+  local nextColor=colors.white
+  local state=copyState(prevState)
+  local spans={rawText=text, state=state}
+
+
+  local target={
+    setTextColor=function(c) nextColor=c end,
+    write=function(...)
+        if #spans>0 and spans[#spans].color==nextColor then
+          spans[#spans].text=spans[#spans].text..table.concat({...})
+        else
+          spans[#spans+1]={
+            text=table.concat({...}),
+            color=nextColor
+          }
+        end
+      end,
+    isColor=function() return term.isColor() end
+  }
+
+  writeHilight(text,state,target)
+
+  return spans
+end
+
+function compareStates(stateA,stateB)
+  return stateA.inString==stateB.inString and stateA.inComment==stateB.inComment and stateA.blockEnd==stateB.blockEnd
+end
+
+
+function writeSpans(spans)
+  for i=1,#spans do
+    term.setTextColor(spans[i].color)
+    term.write(spans[i].text)
+  end
+  term.setTextColor(colors.white)
+end
+
+function interactiveTest()
+  local spans={state={}}
+  while true do
+    write("\n>")
+    local input=read()
+
+    if #input==0 then
+      break
+    end
+    spans=hilightToSpans(input,spans.state)
+
+    writeSpans(spans)
+  end
+end
+
+if shell then
+  interactiveText()
+end
