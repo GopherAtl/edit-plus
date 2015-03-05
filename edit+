@@ -350,12 +350,19 @@ local function decreaseIndent()
       local text=lines[y].rawText
       local tab=text:match("^  ?")
       if tab then
+        if y==selectBounds[1].y then
+          selectBounds[1].x=selectBounds[1].x-#tab
+        end
+        if y==selectBounds[2].y then
+          selectBounds[2].x=selectBounds[2].x-#tab
+        end
         updateLine(y,text:sub(1+#tab))
         if y==curPos.y+scrollPos.y-1 then
           curPos.x=math.max(1,curPos.x-#tab)
         end
       end
     end
+
     redrawFrom(selectBounds[1].y-scrollPos.y+1)
   else
     local lineNum,index=curTextPos()
@@ -372,6 +379,12 @@ local function increaseIndent()
   if selectBounds then
     for y=selectBounds[1].y,selectBounds[2].y do
       updateLine(y,"  "..lines[y].rawText)
+      if y==selectBounds[1].y then
+        selectBounds[1].x=selectBounds[1].x+2
+      end
+      if y==selectBounds[2].y then
+        selectBounds[2].x=selectBounds[2].x+2
+      end
       if y==curPos.y+scrollPos.y-1 then
         curPos.x=curPos.x+2
       end
