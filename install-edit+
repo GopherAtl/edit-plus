@@ -1,0 +1,38 @@
+if not http then
+  error("http api required.")
+end
+
+function grabFile(name)
+  write("downloading '"..name.."'...")
+
+  if fs.exists(name) then
+    print("Skipping, already exists")
+  else
+    local req=http.get("https://raw.githubusercontent.com/GopherAtl/edit-plus/master/"..name)
+    if req==nil then
+      error("Cound't make request!")
+    end
+
+    if req.getResponseCode()~=200 then
+      req.close()
+      error("Unexpected response code "..req.getResponseCode())
+    end
+
+    local text=req.readAll()
+
+    req.close()
+
+
+    local file=fs.open(name,"w")
+    if not file then
+      error("Couldn't open file '"..name.."' for writing!")
+    end
+
+    file.write(text)
+    file.close()
+    print("success! "..#text.." bytes")
+  end
+end
+
+grabFile("edit+")
+grabFile("hilight")

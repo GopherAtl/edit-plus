@@ -2,8 +2,19 @@
 
 --edit+
 
-os.unloadAPI("hilight")
-os.loadAPI("hilight")
+if not hilight then
+  --search for it
+  local searchPaths={"/",shell.dir().."/","apis/",shell.getRunningProgram():match("^(.-/)%w+$"),"/usr/lib/","/lib/"}
+  for i=1,#searchPaths do
+    if fs.exists(searchPaths[i].."hilight") then
+      os.loadAPI(searchPaths[i].."hilight")
+      break
+    end
+  end
+  if not hilight then
+    error("Couldn't find hilight api anywhere!")
+  end
+end
 
 if hilight==nil then
   error("hilight not loaded?")
