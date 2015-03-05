@@ -314,7 +314,7 @@ local function deleteSelection()
         table.remove(lines,startY+1)
       end
       updateLine(startY,newText)
-      redrawFrom(startY+1)
+      redrawFrom(curPos.y+1)
     end
   end
 end
@@ -362,9 +362,9 @@ local function run()
   term.setCursorPos(1,1)
 
   local succ,err
-  local func=loadfile(filename)
+  local func=loadfile(filePath)
   if not func then
-    succ,err=pcall(dofile,filename)
+    succ,err=pcall(dofile,filePath)
   else
     setfenv(func,runEnv)
     succ,err=pcall(func)
@@ -375,7 +375,7 @@ local function run()
   term.setCursorPos(1,h)
   term.scroll(1)
   if not succ and err then
-    print("Program '"..filename.."' crashed with error:")
+    print("Program '"..filePath.."' crashed with error:")
     printError(err)
   else
     print("program exited normally")
@@ -533,9 +533,11 @@ local function doMenu()
         itemStr=itemStr.."("..hk..")"
       end
       itemStr=itemStr..(selected==i and "]" or " ")
-      for j=1,#itemStr do
-        buttonMap[#buttonMap+1]={i,cmd}
+      if selected==i then
+        command=cmd
       end
+
+      hkMap[hk]=cmd
       menuStr=menuStr..itemStr
     end
     term.setCursorPos(1,h)
