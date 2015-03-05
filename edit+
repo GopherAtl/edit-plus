@@ -2,7 +2,7 @@
 
 --edit+
 
-local programDir=shell.getRunningProgram():match("^(.-/)[^/]+$")
+local programDir=shell.getRunningProgram():match("^(.-/?)[^/]+$")
 
 if not hilight then
   --search for it
@@ -64,7 +64,7 @@ if fs.exists(".edit+") then
   settingsPath=".edit+"
   loadSettings()
 elseif fs.exists("/etc") and fs.isDir("/etc") then
-  settingsPath="/etc/.edit+")
+  settingsPath="/etc/.edit+"
   if fs.exists("/etc/.edit+") then
     loadSettings()
   else
@@ -743,8 +743,7 @@ local function doMenu()
         --do the thing
         break
       elseif e[2]==keys.tab then
-        decreaseIndent()
-        command=nil
+        command="decrease indent"
         break
       end
     elseif e[1]=="char" then
