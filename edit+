@@ -2,9 +2,11 @@
 
 --edit+
 
+local programDir=shell.getRunningProgram():match("^(.-/)[^/]+$")
+
 if not hilight then
   --search for it
-  local searchPaths={"/",shell.dir().."/","apis/",shell.getRunningProgram():match("^(.-/)[^/]+$"),"/usr/lib/","/lib/"}
+  local searchPaths={"/",shell.dir().."/","apis/",programDir,"/usr/lib/","/lib/"}
   for i=1,#searchPaths do
 
     if searchPaths[i]==nil then
@@ -23,6 +25,59 @@ end
 
 if hilight==nil then
   error("hilight not loaded?")
+end
+
+local settings = {
+  recentFiles = { },
+  syntaxStyle = "pastebin",
+}
+
+local settingsPath
+
+local function loadSettings()
+  local file=fs.open(settingsPath,"r")
+  if not file then
+    error("Couldn't open settings file to read!")
+  end
+  local text=file.readAll()
+  file.close()
+  local t=textutils.unserialize(text)
+  --copy fields over, so defaults for new settings don't break things when new features added
+  for k,v in pairs(t) do
+    settings[k]=v
+  end
+end
+
+local function saveSettings()
+  local file=fs.open(settingsPath,"w")
+  if not file then
+    --TODO: in-editor error display rather than crash, which might lose unsaved
+    --changes?
+    error("Couldn't open settings file to write!")
+  end
+  file.write(textutils.serialize(settings))
+  file.close()
+end
+
+--load saved config settings
+if fs.exists(".edit+") then
+  settingsPath=".edit+"
+  loadSettings()
+elseif fs.exists("/etc") and fs.isDir("/etc") then
+  settingsPath="/etc/.edit+")
+  if fs.exists("/etc/.edit+") then
+    loadSettings()
+  else
+    --create file with defaults
+    saveSettings()
+  end
+else
+  settingsPath=programDir..".edit+"
+  if fs.exists(settingsPath) then
+    loadSettings()
+  else
+    saveSettings()
+  end
 end
 
 local args={...}
@@ -474,9 +529,6 @@ local function run()
   doCursor()
 end
 
-local function exit()
-  return true
-end
 
 local function copy()
   if selectBounds then
@@ -534,48 +586,68 @@ local function paste()
   end
 end
 
+local commands = {
+  ["save"] = {
+      func=save,
+    },
+  ["load"] = {
+      func=load,
+    },
+  ["run"] = {
+      func=run,
+    },
+  ["exit"] = {
+      func=function() return true end,
+    },
+
+  ["increase indent"] = {
+      func=increaseIndent,
+    },
+  ["decrease indent"] = {
+      func=decreaseIndent,
+    },
+
+  ["copy"] = {
+      func=copy,
+    },
+  ["cut"] = {
+      func=cut,
+    },
+  ["paste"] = {
+      func=paste,
+    },
+
+
+}
 
 local basicMenu={
-    "&save",
+    {label="&save", cmd="save", },
 --    "&load",
 --    "&new",
 --    "help-&?",
-    "&run",
-    "&exit",
+    {label="&run", cmd="run", },
+    {label="&exit", cmd="exit", },
 --    "&advanced",
-    "&copy",
-    "cut-&x",
-    "paste-&v",
-    funcs={
-      save=save,
-      load=load,
-      new=new,
-      help=help,
-      run=run,
-      exit=exit,
-
-      copy=copy,
-      cut=cut,
-      paste=paste
-    },
+    {label="&copy", cmd="copy", },
+    {label="cut-&x", cmd="cut", },
+    {label="paste-&v", cmd="paste", },
 }
+
 
 redrawFrom(1)
 term.setCursorBlink(true)
 doCursor()
 
 local function writeMenuLabel(menuItem,selected)
-  local pre,pk,hk,post=menuItem:match("^(%a*)(%-?)&(.)(%a*)")
+  local pre,pk,hk,post=menuItem.label:match("^(%a*)(%-?)&(.)(%a*)")
   if not pre then
-    error("malformed menu label - '"..menuItem.."'")
+    error("malformed menu label - '"..menuItem.label.."'")
   end
   local label=" "
-  local func=pre
   term.setBackgroundColor(selected and colors.blue or colors.gray)
   term.setTextColor(colors.white)
   term.write(" "..pre)
   if pk~="-" then
-    func=func..hk..post
     term.setTextColor(colors.yellow)
     term.write(hk)
     term.setTextColor(colors.white)
@@ -589,7 +661,7 @@ local function writeMenuLabel(menuItem,selected)
   end
   term.write(" ")
   label=label.." "
-  return func,hk,label
+  return menuItem.cmd,hk,label
 end
 
 local function doMenu()
@@ -603,21 +675,19 @@ local function doMenu()
     local menuStr=""
     for i=1,#menu do
       local itemStr=(selected==i and "[" or " ")
-      local pre,pk,hk,post=menu[i]:match("^(%a*)(%-?)&(.)(%a*)")
+      local pre,pk,hk,post=menu[i].label:match("^(%a*)(%-?)&(.)(%a*)")
       itemStr=itemStr..pre
-      local cmd=pre
       if pk=="" then
         itemStr=itemStr.."("..hk..")"..post
-        cmd=cmd..hk..post
       else
         itemStr=itemStr.."("..hk..")"
       end
       itemStr=itemStr..(selected==i and "]" or " ")
       if selected==i then
-        command=cmd
+        command=menu[i].cmd
       end
 
-      hkMap[hk]=cmd
+      hkMap[hk]=menu[i].cmd
       menuStr=menuStr..itemStr
     end
     term.setCursorPos(1,h)
@@ -697,7 +767,7 @@ local function doMenu()
 
   end
 
-  if basicMenu.funcs[command] and basicMenu.funcs[command]() then
+  if command and commands[command] and commands[command].func() then
     running=false
   else
     redrawLine(h)
