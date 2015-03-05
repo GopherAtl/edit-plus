@@ -674,6 +674,7 @@ local function doMenu()
         break
       elseif e[2]==keys.tab then
         decreaseIndent()
+        command=nil
         break
       end
     elseif e[1]=="char" then
