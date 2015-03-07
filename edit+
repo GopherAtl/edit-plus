@@ -422,6 +422,23 @@ local function deleteSelection()
   end
 end
 
+local function insertText(text)
+  if selectBounds then
+    deleteSelection()
+  end
+  --get the affected line and actual x position in line
+  local lineNum, index = curTextPos()
+  local line=lines[lineNum]
+  --insert our char!
+  local newText=line.rawText:sub(1,index-1)..text..line.rawText:sub(index)
+  updateLine(lineNum,newText)
+  curPos.x=curPos.x+#text
+  if curPos.x-scrollPos.x+1>w then
+    setScrollX(curPos.x-w+1)
+  end
+  doCursor()
+end
+
 local function decreaseIndent()
   if selectBounds then
     for y=selectBounds[1].y,selectBounds[2].y do
@@ -481,6 +498,7 @@ local function increaseIndent()
     curPos.x=math.max(1,curPos.x+tab)
   end
 end
+
 
 
 local function save()
@@ -882,8 +900,11 @@ local function doMenu(menuItems)
           menuItems.selected=nil
           break
         end
+      elseif e[1]=="paste" then
+        insertText(e[2])
+        command=nil
+        break
       end
-
     end
 
     if type(menuItems.selected)=="nil" or menuItems.selected==0 then
@@ -1097,24 +1118,13 @@ while running do
         --insert our char!
         local left,right=line.rawText:sub(1,index-1),line.rawText:sub(index)
         local tab=#left%2==0 and "  " or " "
-        curPos.x=index+#tab
-        updateLine(lineNum,left..tab..right)
+        insertText(tab)
       end
       doCursor()
     end
   elseif e[1]=="char" then
     local char=e[2]
-    if selectBounds then
-      deleteSelection()
-    end
-    --get the affected line and actual x position in line
-    local lineNum, index = curTextPos()
-    local line=lines[lineNum]
-    --insert our char!
-    local newText=line.rawText:sub(1,index-1)..char..line.rawText:sub(index)
-    curPos.x=index+1
-    updateLine(lineNum,newText)
-    doCursor()
+    insertText(e[2])
 
   elseif e[1]=="mouse_scroll" then
     if e[2]>0 then

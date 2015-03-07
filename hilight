@@ -1,12 +1,11 @@
 --[[
 syntax hilighting
-
+  curPos.x=index+#text
 syntax hilighting methods
 
 default colorscheme is based on pastebin's, but
 more will be implemented later
 --]]
-
 
 local keywords={
   ["and"]=true, ["break"]=true, ["do"]=true, ["else"]=true, ["elseif"]=true,
@@ -95,7 +94,7 @@ function writeHilight(line, state, target)
             target.setTextColor(hilight.string)
             target.write(strBlk)
           else
-            local op,space,rest=line:match("^([%+%-%(%)%[%]%{%}/%*=<>%^:#~,]+)(%s*)(.-)$")
+            local op,space,rest=line:match("^([%+%-%(%)%[%]%{%}/%*=<>%^:#~,])(%s*)(.-)$")
             if op then
               line=rest
               target.setTextColor(hilight.operator)
