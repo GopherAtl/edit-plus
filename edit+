@@ -85,7 +85,14 @@ local args={...}
 
 
 if #args<1 then
-  print("usage:\nedit+ <filename>")
+  print[[
+  usage:
+edit+ <filename>
+  edit file named <filename>
+edit+ --update
+  Downloads latest release version
+edit+ --update beta
+  Downloads latest beta version]]
   return
 end
 
