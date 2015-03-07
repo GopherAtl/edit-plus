@@ -83,12 +83,60 @@ end
 
 local args={...}
 
-local filename=args[1]
 
-if not filename then
+if #args<1 then
   print("usage:\nedit+ <filename>")
   return
 end
+
+if args[1]=="--update" then
+  local branch="master"
+  --update mahself!
+  if args[2] then
+    if args[2]=="beta" then
+      branch="dev"
+    else
+      print("unrecognized 2nd arg to --update.")
+      return
+    end
+  end
+  print("updating files...")
+  function grabFile(name)
+    write("downloading '"..name.."'...")
+
+    local req=http.get("https://raw.githubusercontent.com/GopherAtl/edit-plus/"..branch.."/"..name)
+    if req==nil then
+      error("Cound't make request!")
+    end
+
+    if req.getResponseCode()~=200 then
+      req.close()
+      error("Unexpected response code "..req.getResponseCode())
+    end
+
+    local text=req.readAll()
+
+    req.close()
+
+
+    local file=fs.open(name,"w")
+    if not file then
+      error("Couldn't open file '"..name.."' for writing!")
+    end
+
+    file.write(text)
+    file.close()
+    print("success! "..#text.." bytes")
+  end
+
+  grabFile("edit+")
+  grabFile("hilight")
+  return
+end
+
+
+
+local filename=args[1]
 
 local filePath=shell.dir().."/"..filename
 local lines={}
