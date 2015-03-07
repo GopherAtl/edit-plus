@@ -48,6 +48,7 @@ local function loadSettings()
   end
 end
 
+
 local function saveSettings()
   local file=fs.open(settingsPath,"w")
   if not file then
@@ -121,6 +122,24 @@ local selectBounds
 local lastClickPos={x=1,y=1}
 local clipboard
 
+local viewRect
+local mainMenu
+
+
+local drawMenu
+
+local function updateViewRect()
+  w,h=term.getSize()
+  viewRect={
+      x=1,
+      y=1,
+      w=w,
+      h=settings.hideMenus and h or (h-1),
+    }
+end
+
+updateViewRect()
+
 local function curToTextPos(curPos)
   local lineNum=curPos.y+scrollPos.y-1
   local index
@@ -153,7 +172,7 @@ end
 
 local function redrawLine(screenLine)
   local lineNum=screenLine+scrollPos.y-1
-  if lineNum<=#lines then
+  if lineNum<=#lines and screenLine<=viewRect.h then
     local selStart,selEnd=0,-1
     local spans=lines[lineNum]
     if selectBounds and selectBounds[1].y<=lineNum and selectBounds[2].y>=lineNum then
@@ -211,6 +230,10 @@ local function redrawLine(screenLine)
     term.write((" "):rep(w))
   end
   if screenLine==h then
+    if not settings.hideMenus then
+      --draw the damn menu
+      drawMenu(mainMenu)
+    end
     drawLineNum()
   end
 end
@@ -236,7 +259,7 @@ local function updateSelect(newBounds)
   end
   selectBounds=newBounds
   for i=startY-scrollPos.y+1,endY-scrollPos.y+1 do
-    if i>=1 and i<=h then
+    if i>=1 and i<=viewRect.h then
       redrawLine(i)
     end
   end
@@ -279,7 +302,7 @@ end
 
 local function scrollY(offset)
   local didScroll=false
-  local target=math.max(math.min(scrollPos.y+offset,#lines-h+1),1)
+  local target=math.max(math.min(scrollPos.y+offset,#lines-viewRect.h+1),1)
   if target~=scrollPos.y then
     didScroll=true
     --correct if it was clamped
@@ -287,7 +310,7 @@ local function scrollY(offset)
     term.scroll(offset)
     scrollPos.y=target
     for i=1,offset+1 do
-      redrawLine(h-i+1)
+      redrawLine(viewRect.h-i+1)
     end
     for i=-1,offset,-1 do
       redrawLine(-i)
@@ -302,9 +325,9 @@ local function gotoLine(lineNum)
     scrollY(lineNum-scrollPos.y)
     curPos.y=1
     redraw=true
-  elseif curY>h then
-    scrollY(lineNum-h+1 - scrollPos.y)
-    curPos.y=h
+  elseif curY>viewRect.h then
+    scrollY(lineNum-viewRect.h+1 - scrollPos.y)
+    curPos.y=viewRect.h
     redraw=true
   else
     curPos.y=lineNum-scrollPos.y+1
@@ -326,9 +349,9 @@ local function cursorDown(amt)
     amt=#lines-curPos.y-scrollPos.y+1
   end
   if amt>0 then
-    if curPos.y+amt>h then
-      scrollY(amt-(h-curPos.y))
-      curPos.y=h
+    if curPos.y+amt>viewRect.h then
+      scrollY(amt-(viewRect.h-curPos.y))
+      curPos.y=viewRect.h
     elseif curPos.y<#lines then
       curPos.y=curPos.y+amt
     end
@@ -349,7 +372,7 @@ end
 
 
 local function updateLine(lineNum,newText,noProp)
-local prevLineState={}
+  local prevLineState={}
   if lineNum>1 then
     prevLineState=lines[lineNum-1].state
   end
@@ -366,7 +389,7 @@ local prevLineState={}
       for i=lineNum+1,#lines do
         prevEndState=lines[i].state
         lines[i]=hilight.hilightToSpans(lines[i].rawText,prevState)
-        if i-scrollPos.y+1 <= h then
+        if i-scrollPos.y+1 <= viewRect.h then
           redrawLine(i-scrollPos.y+1)
         end
         prevState=lines[i].state
@@ -403,17 +426,18 @@ local function decreaseIndent()
   if selectBounds then
     for y=selectBounds[1].y,selectBounds[2].y do
       local text=lines[y].rawText
-      local tab=text:match("^  ?")
+      local curCount=#text:match("^%s*")
+      local tab=curCount>0 and (curCount%2==0 and 2 or 1)
       if tab then
         if y==selectBounds[1].y then
-          selectBounds[1].x=selectBounds[1].x-#tab
+          selectBounds[1].x=selectBounds[1].x-tab
         end
         if y==selectBounds[2].y then
-          selectBounds[2].x=selectBounds[2].x-#tab
+          selectBounds[2].x=selectBounds[2].x-tab
         end
-        updateLine(y,text:sub(1+#tab))
+        updateLine(y,text:sub(1+tab))
         if y==curPos.y+scrollPos.y-1 then
-          curPos.x=math.max(1,curPos.x-#tab)
+          curPos.x=math.max(1,curPos.x-tab)
         end
       end
     end
@@ -422,10 +446,11 @@ local function decreaseIndent()
   else
     local lineNum,index=curTextPos()
     local text=lines[lineNum].rawText
-    local tab=text:match("^  ?")
+    local curCount=#text:match("^%s*")
+    local tab=curCount>0 and (curCount%2==0 and 2 or 1)
     if tab then
-      updateLine(lineNum,text:sub(1+#tab))
-      curPos.x=math.max(1,curPos.x-#tab)
+      updateLine(lineNum,text:sub(1+tab))
+      curPos.x=math.max(1,curPos.x-tab)
     end
   end
 end
@@ -433,26 +458,27 @@ end
 local function increaseIndent()
   if selectBounds then
     for y=selectBounds[1].y,selectBounds[2].y do
-      updateLine(y,"  "..lines[y].rawText)
+      local curCount=#lines[y].rawText:match("^%s*")
+      local tab=curCount%2==0 and 2 or 1
+      updateLine(y,(" "):rep(tab)..lines[y].rawText)
       if y==selectBounds[1].y then
-        selectBounds[1].x=selectBounds[1].x+2
+        selectBounds[1].x=selectBounds[1].x+tab
       end
       if y==selectBounds[2].y then
-        selectBounds[2].x=selectBounds[2].x+2
+        selectBounds[2].x=selectBounds[2].x+tab
       end
       if y==curPos.y+scrollPos.y-1 then
-        curPos.x=curPos.x+2
+        curPos.x=curPos.x+tab
       end
     end
     redrawFrom(selectBounds[1].y-scrollPos.y+1)
   else
     local lineNum,index=curTextPos()
     local text=lines[lineNum].rawText
-    local tab=text:match("^  ?")
-    if tab then
-      updateLine(lineNum,text:sub(1+#tab))
-      curPos.x=math.max(1,curPos.x-#tab)
-    end
+    local curCount=#text:match("^%s*")
+    local tab=curCount%2==0 and 2 or 1
+    updateLine(lineNum,(" "):rep(tab)..text)
+    curPos.x=math.max(1,curPos.x+tab)
   end
 end
 
@@ -597,7 +623,7 @@ local commands = {
       func=run,
     },
   ["exit"] = {
-      func=function() return true end,
+      func=function() running=false end,
     },
 
   ["increase indent"] = {
@@ -620,161 +646,300 @@ local commands = {
 
 }
 
-local basicMenu={
-    {label="&save", cmd="save", },
---    "&load",
---    "&new",
---    "help-&?",
-    {label="&run", cmd="run", },
-    {label="&exit", cmd="exit", },
---    "&advanced",
-    {label="&copy", cmd="copy", },
-    {label="cut-&x", cmd="cut", },
-    {label="paste-&v", cmd="paste", },
+local basicMenuDef={
+    horizontal=true,
+    {label="&File", type="submenu", submenu={
+        {label="&Save", type="command", cmd="save", },
+--      {label="Save &As", type="command", cmd="saveAs", },
+--      {label="&Load", type="command", cmd="load", },
+--      {label="&New", type="command", cmd="new", },
+        {label="&Run", type="command", cmd="run", },
+      },
+    },
+
+    {label="&Edit", type="submenu", submenu={
+        {label="Cut-&x", type="command", cmd="cut", },
+        {label="&Copy", type="command", cmd="copy", },
+        {label="Paste-&v", type="command", cmd="paste", },
+        {label="Inc. Indent-&>", type="command", cmd="increase indent", },
+        {label="Dec. Indent-&<", type="command", cmd="decrease indent", },
+      },
+    },
+--  {label="&Search", type="submenu", submenu={
+--      {label="&Find...", type="command", cmd="find", },
+--      {label="Find &Next", type="command", cmd="findNext", },
+--      {label="Find &Prev", type="command", cmd="findPrev", },
+--      {label="&Replace...", type="command", cmd="findReplace", },
+  {label="&View", type="submenu", submenu={
+--      {label="&Line Numbers", type="command", cmd="toggleLineNums", },
+--      {label="&Line Numbers", type="command", cmd="toggleLineNums", },
+      {label="&Hide Menu", type="toggle", property="hideMenus", },
+      {label="&Advanced Menu", type="toggle", property="advancedMenus", },
+    },
+  },
+
+  {label="&Help", type="command", cmd="help", },
+  {label="E&xit", type="command", cmd="exit", },
 }
 
+function drawMenuItem_color(item,x,y,width,isSelected)
+  term.setCursorPos(x,y)
+  term.setBackgroundColor(isSelected and colors.blue or colors.gray)
+  --pre
+  local w=1
+  term.write(" ")
+  if item.type=="toggle" then
+    term.write("["..(settings[item.property] and "X" or " ").."] ")
+    w=w+3
+  end
+  if #item.pre>0 then
+    term.setTextColor(colors.white)
+    term.write(item.pre)
+    w=w+#item.pre
+  end
+  term.setTextColor(colors.yellow)
+  if item.embedKey then
+    term.write(item.hk)
+    term.setTextColor(colors.white)
+    term.write(item.post)
+    w=w+#item.hk+#item.post
+    term.write((" "):rep(width-w))
+  else
+    term.write((" "):rep(width-w-1-#item.hk)..item.hk.." ")
+  end
+  term.setBackgroundColor(colors.black)
+end
 
+function drawMenuItem_basic(item,x,y,width,isSelected)
+  term.setCursorPos(x,y)
+  term.setBackgroundColor(colors.white)
+  term.setTextColor(colors.black)
+  local w=1
+  term.write(" ")
+  if item.type=="toggle" then
+    term.write("["..(settings[item.property] and "X" or " ").."] ")
+    w=w+3
+  end
+  if #item.pre>0 then
+    term.write(pre)
+    w=w+#pre
+  end
+  if item.embedKey then
+    term.write("("..item.hk..")"..item.post)
+    w=w+2+#hk+#post
+    term.write((" "):rep(width-w))
+  else
+    term.write((" "):rep(width-w-1-#item.hk)..item.hk.." ")
+  end
+  term.setBackgroundColor(colors.black)
+end
+
+local drawMenuItem=term.isColor() and drawMenuItem_color or drawMenuItem_basic
+
+
+local function buildMenu(menuDef,parent)
+  local items={hkMap={}}
+  items.x,items.y=1,h
+  items.selected=1
+  items.parent=parent
+  items.firstShown=1
+  if not menuDef.horizontal and items.y+#items>h then
+    items.y=h-#items+1
+  end
+
+  items.horizontal=menuDef.horizontal
+  local longestLabel=0
+  local offset=1
+  for i=1,#menuDef do
+    local menuItem=menuDef[i]
+    local item={}
+    for k,v in pairs(menuItem) do
+      item[k]=v
+    end
+    local pre,pk,hk,post=menuItem.label:match("^([^&^-]-)(%-?)&(.)([^&]*)")
+    item.pre=pre
+    item.post=post
+    item.hk=hk
+    item.embedKey=pk~="-"
+    item.x=menuDef.horizontal and offset or items.x
+    local labelLen
+    if item.embedKey then
+      labelLen=#pre+1+#post
+      if not term.isColor() then
+        labelLen=labelLen+2
+      end
+    else
+      labelLen=#pre+2
+      if not term.isColor() then
+        labelLen=labelLen+1
+      end
+    end
+    if menuItem.type=="toggle" then
+      labelLen=labelLen+4
+    end
+    item.width=labelLen+2
+    offset=offset+labelLen+2
+    longestLabel=math.max(longestLabel,labelLen)
+    items[#items+1]=item
+    items.hkMap[hk]=menuItem.cmd
+    if item.type=="submenu" then
+      item.submenu=buildMenu(item.submenu,items)
+      if not item.submenu.x then error("wat "..item.label) end
+      item.submenu.x,item.submenu.y=items.x+item.width,items.y+i-1
+      if menuDef.horizontal then
+        item.submenu.x,item.submenu.y=item.x,items.y-#item.submenu
+      end
+      if not item.submenu.x then error("wat "..item.label) end
+    end
+  end
+  items.width=longestLabel+2
+  return items
+end
+
+drawMenu =function(menuItems)
+  if menuItems.horizontal then
+    local offset=0
+    for i=1,#menuItems do
+      if menuItems.x+offset+menuItems[i].width - 1 > w then
+        break
+      end
+      menuItems[i].x=menuItems.x+offset
+      drawMenuItem(menuItems[i],menuItems.x+offset,menuItems.y,menuItems[i].width,menuItems.selected==i)
+      offset=offset+menuItems[i].width
+    end
+    menuItems.lastX=offset
+  else
+    if menuItems.y+#menuItems > h then
+      menuItems.y=h - #menuItems+1
+    end
+    if not menuItems.x then error("wat ") end
+    if menuItems.width + menuItems.x  > w then
+      menuItems.x=w-menuItems.width
+    end
+    for i=1,#menuItems do
+      drawMenuItem(menuItems[i],menuItems.x,menuItems.y+i-1,menuItems.width,menuItems.selected==i)
+    end
+  end
+end
+
+local function doMenu(menuItems)
+  menuItems.selected=1
+  --root menu
+  --          |15                      |40(26)       |54(39)
+  local command
+  local exitAll=false
+
+  local keyNext=menuItems.horizontal and keys.right or keys.down
+  local keyPrev=menuItems.horizontal and keys.left or keys.up
+  while true do
+    while true do
+      drawMenu(menuItems)
+      local e={os.pullEvent()}
+      if e[1]=="key" then
+        if e[2]==keys.leftCtrl then
+          menuItems.selected=nil
+          break
+        elseif e[2]==keyNext then
+          menuItems.selected=menuItems.selected%#menuItems+1
+        elseif e[2]==keyPrev then
+          menuItems.selected=menuItems.selected==1 and #menuItems or menuItems.selected-1
+        elseif e[2]==keys.enter then
+          --do the selected thing
+          break
+
+        elseif e[2]==keys.tab then
+          menuItems.selected="decrease indent"
+          break
+        end
+      elseif e[1]=="char" then
+        if menuItems.hkMap[e[2]:lower()] then
+          menuItems.selected=menuItems.hkMap[e[2]:lower()]
+          break
+        end
+      elseif e[1]=="mouse_click" then
+        local _,btn,clkX,clkY=unpack(e)
+        if menuItems.horizontal and
+            clkY==menuItems.y and clkX<=menuItems.lastX then
+          for i=menuItems.firstShown,#menuItems do
+            if menuItems[i].x+menuItems[i].width>clkX then
+              menuItems.selected=i
+              break
+            end
+          end
+          if btn==1 and menuItems[menuItems.selected].type=="command" then
+            exitAll=true
+          end
+          break
+        elseif not menuItems.horizontal and
+            clkY>=menuItems.y and clkY<menuItems.y+#menuItems and
+            clkX>=menuItems.x and clkX<menuItems.x+menuItems.width then
+          menuItems.selected=clkY-menuItems.y+1
+          if btn==1 and menuItems[menuItems.selected].type=="command" then
+            exitAll=true
+          end
+          break
+        else
+          menuItems.selected=nil
+          break
+        end
+      end
+
+    end
+
+    if type(menuItems.selected)=="nil" or menuItems.selected==0 then
+      break
+    elseif type(menuItems.selected)=="number" then
+      local item=menuItems[menuItems.selected]
+      if item then
+        if item.type=="command" then
+          command=item.cmd
+        elseif item.type=="submenu" then
+          drawMenu(menuItems)
+          command=nil
+          if doMenu(item.submenu,false,subX,subY,menuItems) then
+            exitAll=true
+            break
+          end
+        elseif item.type=="toggle" then
+          settings[item.property]=not settings[item.property]
+          saveSettings()
+          updateViewRect()
+          exitAll=true
+          command=nil
+          break
+        end
+      end
+    elseif type(menuItems.selected)=="string" then
+      command=menuItems.selected
+    end
+
+    if command then
+      if commands[command] then
+        commands[command].func()
+        exitAll=true
+        break
+      end
+    end
+  end
+
+  updateViewRect()
+  menuItems.selected=0
+  redrawFrom(menuItems.y)
+  return exitAll
+end
+
+
+
+
+mainMenu=buildMenu(basicMenuDef)
+mainMenu.selected=0
 redrawFrom(1)
 term.setCursorBlink(true)
 doCursor()
 
-local function writeMenuLabel(menuItem,selected)
-  local pre,pk,hk,post=menuItem.label:match("^(%a*)(%-?)&(.)(%a*)")
-  if not pre then
-    error("malformed menu label - '"..menuItem.label.."'")
-  end
-  local label=" "
-  term.setBackgroundColor(selected and colors.blue or colors.gray)
-  term.setTextColor(colors.white)
-  term.write(" "..pre)
-  if pk~="-" then
-    term.setTextColor(colors.yellow)
-    term.write(hk)
-    term.setTextColor(colors.white)
-    term.write(post)
-    label=label..pre..hk..post
-  else
-    term.write("-")
-    term.setTextColor(colors.yellow)
-    term.write(hk)
-    label=label..pre.."-"..hk
-  end
-  term.write(" ")
-  label=label.." "
-  return menuItem.cmd,hk,label
+if not settings.hideMenus then
+  drawMenu(mainMenu)
 end
-
-local function doMenu()
-  --root menu
-  --          |15                      |40(26)       |54(39)
-  local buttonMap={}
-  local hkMap={}
-  local command
-  local selected=1
-  local function drawMenu(menu)
-    local menuStr=""
-    for i=1,#menu do
-      local itemStr=(selected==i and "[" or " ")
-      local pre,pk,hk,post=menu[i].label:match("^(%a*)(%-?)&(.)(%a*)")
-      itemStr=itemStr..pre
-      if pk=="" then
-        itemStr=itemStr.."("..hk..")"..post
-      else
-        itemStr=itemStr.."("..hk..")"
-      end
-      itemStr=itemStr..(selected==i and "]" or " ")
-      if selected==i then
-        command=menu[i].cmd
-      end
-
-      hkMap[hk]=menu[i].cmd
-      menuStr=menuStr..itemStr
-    end
-    term.setCursorPos(1,h)
-    term.setTextColor(colors.black)
-    term.setBackgroundColor(colors.white)
-    term.write(menuStr)
-    term.setBackgroundColor(colors.black)
-  end
-  if term.isColor() then
-    drawMenu=function(menu)
-      term.setCursorPos(1,h)
-      for i=1,selected-1 do
-        local cmd,hk,label=writeMenuLabel(menu[i])
-        for j=1,#label do
-          buttonMap[#buttonMap+1]={i,cmd}
-          hkMap[hk]=cmd
-        end
-      end
-      local cmd,hk,label=writeMenuLabel(menu[selected],true)
-      command=cmd
-      for j=1,#label do
-        buttonMap[#buttonMap+1]={selected,cmd}
-      end
-      hkMap[hk]=cmd
-      menuStr=""
-      for i=selected+1,#menu do
-        local cmd,hk,label=writeMenuLabel(menu[i])
-        for j=1,#label do
-          buttonMap[#buttonMap+1]={i,cmd}
-        end
-        hkMap[hk]=cmd
-      end
-      term.setTextColor(colors.black)
-      term.setBackgroundColor(colors.lightGray)
-      term.write(menuStr)
-      term.setBackgroundColor(colors.black)
-    end
-  end
-
-  --           new save load help exit more
-  while true do
-    drawMenu(basicMenu)
-    local e={os.pullEvent()}
-    if e[1]=="key" then
-      if e[2]==keys.leftCtrl then
-        command=nil
-        break
-      elseif e[2]==keys.right then
-        selected=selected%#basicMenu+1
-      elseif e[2]==keys.left then
-        selected=selected==1 and #basicMenu or selected-1
-      elseif e[2]==keys.enter then
-        --do the thing
-        break
-      elseif e[2]==keys.tab then
-        command="decrease indent"
-        break
-      end
-    elseif e[1]=="char" then
-      if hkMap[e[2]] then
-        command=hkMap[e[2]]
-        break
-      end
-    elseif e[1]=="mouse_click" then
-      local _,btn,x,y=unpack(e)
-      if y==h and buttonMap[x] then
-        selected=buttonMap[x][1]
-        if btn==1 then
-          command=buttonMap[x][2]
-          break
-        end
-      else
-        break
-      end
-    end
-
-  end
-
-  if command and commands[command] and commands[command].func() then
-    running=false
-  else
-    redrawLine(h)
-    doCursor()
-  end
-
-end
-
 
 while running do
 
@@ -824,19 +989,22 @@ while running do
       updateSelect()
       doCursor()
     elseif key==keys.pageDown then
-      if not scrollY(h) then
-        curPos.y=math.min(h,#lines)
+      if not scrollY(viewRect.h) then
+        curPos.y=math.min(viewRect.h,#lines)
       end
       updateSelect()
       doCursor()
     elseif key==keys.pageUp then
-      if not scrollY(-h) then
+      if not scrollY(-viewRect.h) then
         curPos.y=1
       end
       updateSelect()
       doCursor()
     elseif key==keys.leftCtrl then
-      doMenu()
+      mainMenu.selected=1
+      doMenu(mainMenu)
+      mainMenu.selected=0
+      doCursor()
     elseif key==keys.enter then
       if selectBounds then
         deleteSelection()
@@ -848,7 +1016,7 @@ while running do
       updateLine(lineNum,pre,true)
       table.insert(lines,lineNum+1,{state={}})
       updateLine(lineNum+1,post)
-      if curPos.y==h then
+      if curPos.y==viewRect.h then
         cursorDown()
       else
         curPos.y=curPos.y+1
@@ -988,7 +1156,7 @@ while running do
     end
     updateSelect(newBounds)
   elseif e[1]=="term_resize" then
-    w,h=term.getSize()
+    updateViewRect()
     redrawFrom(1)
     doCursor()
   end
