@@ -1,6 +1,6 @@
 --[[
 syntax hilighting
-  curPos.x=index+#text
+
 syntax hilighting methods
 
 default colorscheme is based on pastebin's, but
