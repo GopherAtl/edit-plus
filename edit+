@@ -88,12 +88,10 @@ if #args<1 then
   print[[
   usage:
 edit+ <filename>
-  edit file named <filename>
+edit file named <filename>
 edit+ --update
-  Downloads latest release version
-edit+ --update beta
-  Downloads latest beta version]]
-  return
+edit+ --update beta]]
+return
 end
 
 if args[1]=="--update" then
