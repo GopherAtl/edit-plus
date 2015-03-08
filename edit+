@@ -1108,7 +1108,7 @@ local function handleMenuEvent(menu, e)
   if e[1]=="key" then
     if not menu.childActive then
       handled = true
-      if e[2]==keys.leftCtrl then
+      if e[2]==keys.leftCtrl or e[2]==keys.rightAlt then
         menu:hide()
       elseif e[2]==keys.enter then
         --do the selected thing
