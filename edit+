@@ -299,16 +299,17 @@ local function redrawLine(screenLine)
   end
 end
 
-local function redrawFrom(index)
+local function dirtyFrom(index)
   for y=index,h do
     dirtyLines[y]=true
-    --redrawLine(y)
   end
 end
 
 local function redrawDirty()
   if dirtyLines.all then
-    redrawFrom(1)
+    for i=1,h do
+      redrawLine(i)
+    end
   else
     for r,_ in pairs(dirtyLines) do
        redrawLine(r)
@@ -476,7 +477,7 @@ local function gotoLine(lineNum)
     redraw=true
   end
   if redraw then
-    redrawFrom(1)
+    dirtyFrom(1)
   end
 --]]
 end
@@ -550,7 +551,7 @@ local function deleteSelection()
       if not hilight.compareStates(lines[startY].state,prevEndState) then
         updateLine(startY+1)
       end
-      redrawFrom(startY-scrollPos.y+2)
+      dirtyFrom(startY-scrollPos.y+2)
     end
   end
 end
@@ -592,7 +593,7 @@ local function decreaseIndent()
       end
     end
 
-    redrawFrom(selectBounds[1].y-scrollPos.y+1)
+    dirtyFrom(selectBounds[1].y-scrollPos.y+1)
   else
     local lineNum,index=curTextPos()
     local text=lines[lineNum].rawText
@@ -621,7 +622,7 @@ local function increaseIndent()
         curPos.x=curPos.x+tab--moveCursor(tab,0)
       end
     end
-    redrawFrom(selectBounds[1].y-scrollPos.y+1)
+    dirtyFrom(selectBounds[1].y-scrollPos.y+1)
   else
     local lineNum,index=curTextPos()
     local text=lines[lineNum].rawText
@@ -702,7 +703,7 @@ local function run()
     end
   end
   term.clear()
-  redrawFrom(1)
+  dirtyFrom(1)
   doCursor()
 end
 
@@ -756,7 +757,7 @@ local function paste()
       updateLine(lineNum+i-1,newLines[i],i==#newLines,true)
     end
     updateLine(lineNum,newLines[1],false)
-    redrawFrom(lineNum-scrollPos.y+1)
+    dirtyFrom(lineNum-scrollPos.y+1)
     --new cursor pos will be in that last line
     if #newLines>1 then
       cursorDown(#newLines-1)
@@ -1228,7 +1229,7 @@ guiElements[#guiElements+1]=advancedMenu
 advancedMenu.id=#guiElements
 
 mainMenu=buildMenu(basicMenuDef)
-redrawFrom(1)
+dirtyFrom(1)
 term.setCursorBlink(true)
 doCursor()
 
@@ -1313,7 +1314,7 @@ while running do
         updateLine(lineNum,pre,true)
         table.insert(lines,lineNum+1,{state={}})
         updateLine(lineNum+1,post)
-        redrawFrom(lineNum)
+        dirtyFrom(lineNum)
         setCursorPos(1,lineNum+1)
 
       elseif key==keys.backspace then
@@ -1329,7 +1330,7 @@ while running do
 
               updateLine(lineNum-1,prevLine.rawText..curLine.rawText)
               setCursorPos(xp,lineNum-1)
-              redrawFrom(curPos.y)
+              dirtyFrom(curPos.y)
             end
           else
             local curText=lines[lineNum].rawText
@@ -1349,7 +1350,7 @@ while running do
             if lineNum<#lines then
               local nextLine=table.remove(lines,lineNum+1)
               updateLine(lineNum,curText..nextLine.rawText)
-              redrawFrom(curPos.y)
+              dirtyFrom(curPos.y)
             end
           else
             local newText=curText:sub(1,index-1)..curText:sub(index+1)
@@ -1430,7 +1431,7 @@ while running do
       updateSelect(newBounds)
     elseif e[1]=="term_resize" then
       updateViewRect()
-      redrawFrom(1)
+      dirtyFrom(1)
       doCursor()
     end
   end
