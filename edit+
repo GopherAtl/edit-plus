@@ -364,7 +364,11 @@ end
 
 
 local function doCursor()
-  term.setCursorPos(trueCurPos())
+  if settings.advancedMenus and advancedMenu.visible then
+    term.setCursorPos(2,h)
+  else
+    term.setCursorPos(trueCurPos())
+  end
   term.setTextColor(colors.white)
   term.setCursorBlink(true)
 end
@@ -1236,11 +1240,10 @@ doCursor()
 if not settings.hideMenus then
   if settings.advancedMenus then
     advancedMenu.alwaysVisible=true
-    advancedMenu.visible=true
     advancedMenu.dirty=true
   else
     mainMenu.alwaysVisible=true
-    mainMenu.visible=true
+    --mainMenu.visible=true
     mainMenu.dirty=true
   end
 end
