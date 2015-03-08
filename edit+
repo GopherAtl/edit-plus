@@ -1247,6 +1247,19 @@ local function doThing(menu,thing)
 
 end
 
+local function updatePos(menu,x,y)
+  local deltaX=x-menu.x
+  local deltaY=y-menu.y
+  menu.x=x
+  menu.y=y
+  for i=1,#menu do
+    local item=menu[i]
+    if item.type=="submenu" then
+      item.submenu:updatePos(item.submenu.x+deltaX, item.submenu.y+deltaY)
+    end
+  end
+end
+
 local function buildMenu(menuDef,parent)
   local menu={hkMap={}}
   local id=menuDef.id or (#guiElements+1)
@@ -1261,6 +1274,7 @@ local function buildMenu(menuDef,parent)
   menu.show = showMenu
   menu.hide = hideMenu
   menu.doThing = doThing
+  menu.updatePos = updatePos
 
   if not menuDef.horizontal and menu.y+#menu>h then
     menu.y=h-#menu+1
@@ -1556,6 +1570,8 @@ while running do
     elseif e[1]=="term_resize" then
       updateViewRect()
       dirtyFrom(1)
+      mainMenu:updatePos(1,h)
+      advancedMenu.y=h
       doCursor()
     end
   end
