@@ -681,13 +681,34 @@ local function run()
   term.clear()
   term.setCursorPos(1,1)
 
+  local function logWrap(f)
+    local log=fs.open("runlog","w")
+    log:write("foo")
+    local co=coroutine.create(f)
+    local filter={coroutine.resume(co)}
+    while coroutine.status(co)~="dead" do
+      local e={os.pullEventRaw()}
+      if e[1]=="terminate" then
+        break
+      end
+      if #filter<2 or filter[2]==e[1] then
+        log.write(table.concat(e,",").."\n")
+        filter={coroutine.resume(co,unpack(e))}
+      end
+      if filter[1]==false then
+        break
+      end
+    end
+    log.close()
+  end
+
   local succ,err
   local func=loadfile(filePath)
   if not func then
-    succ,err=pcall(dofile,filePath)
+    --succ,err=pcall(dofile,filePath)
   else
     setfenv(func,runEnv)
-    succ,err=pcall(func)
+    succ,err=pcall(function() logWrap(func) end)
   end
 
   term.setTextColor(colors.white)
