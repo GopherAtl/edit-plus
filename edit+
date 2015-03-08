@@ -683,7 +683,6 @@ local function run()
 
   local function logWrap(f)
     local log=fs.open("runlog","w")
-    log:write("foo")
     local co=coroutine.create(f)
     local filter={coroutine.resume(co)}
     while coroutine.status(co)~="dead" do
@@ -702,13 +701,47 @@ local function run()
     log.close()
   end
 
-  local succ,err
-  local func=loadfile(filePath)
+  local function replayWrap(f)
+    local log=io.open("runlog","r")
+
+    local co=coroutine.create(f)
+    local filter={coroutine.resume(co)}
+
+    for line in log:lines() do
+      local args={}
+      line:gsub("[^,]+",function(v) args[#args+1]=v end)
+      if args[1]=="key" then
+        args[2]=tonumber(args[2])
+      elseif args[1]=="mouse_click" or args[2]=="mouse_drag" or args[2]=="mouse_scroll" then
+        args[2]=tonumber(args[2])
+        args[3]=tonumber(args[3])
+        args[4]=tonumber(args[4])
+      end
+      sleep(.2)
+      coroutine.resume(co,unpack(args))
+    end
+    log:close()
+    while coroutine.status(co)~="dead" do
+      local e={os.pullEventRaw()}
+      if e[1]=="terminate" then
+        break
+      end
+      if #filter<2 or filter[2]==e[1] then
+        filter={coroutine.resume(co,unpack(e))}
+      end
+      if filter[1]==false then
+        break
+      end
+    end
+  end
+
+  local succ
+  local func,err=loadfile(filePath)
   if not func then
-    --succ,err=pcall(dofile,filePath)
+    succ=false
   else
     setfenv(func,runEnv)
-    succ,err=pcall(function() logWrap(func) end)
+    succ,err=pcall(function() replayWrap(func) end)
   end
 
   term.setTextColor(colors.white)
@@ -759,9 +792,9 @@ end
 
 local function paste()
   if clipboard then
-    local lineNum,index=curTextPos()
     --delete selection, if any, as we'll replace
     deleteSelection()
+    local lineNum,index=curTextPos()
     --split this line at cursor
     local before,after=lines[lineNum].rawText:sub(1,index-1),lines[lineNum].rawText:sub(index)
     local newLines={}
