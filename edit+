@@ -1311,10 +1311,10 @@ while running do
         local lineNum,index=curTextPos()
         local curText=lines[lineNum].rawText
         local pre,post=curText:sub(1,index-1),curText:sub(index)
+        dirtyFrom(curPos.y)
         updateLine(lineNum,pre,true)
         table.insert(lines,lineNum+1,{state={}})
         updateLine(lineNum+1,post)
-        dirtyFrom(lineNum)
         setCursorPos(1,lineNum+1)
 
       elseif key==keys.backspace then
