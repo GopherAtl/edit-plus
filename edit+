@@ -424,7 +424,6 @@ local function setCursorPos(newX,newY)
   newY=math.min(#lines,math.max(1,newY or (curPos.y+scrollPos.y-1)))
   newX=math.max(1,newX)
 
-
   local screenY=newY-scrollPos.y+1
   if screenY>viewRect.h then
     scrollY(screenY-viewRect.h)
@@ -664,8 +663,73 @@ local function new()
   --will facilitate saveAs also.
 end
 
+   local helpPages={[[
+Basic Menu:
+
+Hotkeys for menu items
+are in yellow, press to
+select.
+Ctrl closes the current
+menu, arrows navigate,
+enter selects.
+
+special keys:
+
+b - begin/end block
+selection
+
+tab - decrease indent on
+selected line/block
+
+    tab for next page
+      ctrl to exit]], [[
+Advanced Menu:
+
+q - quit/exit
+s - save file
+r - run program
+< or tab - decrease indent
+> - increase indent
+c - copy
+x - cut
+v - paste
+b - toggle block sel
+? - help (this)
+h - toggle menu hiding
+m - switch to basic menu
+
+
+
+    tab for next page
+      ctrl to exit]],}
+
 local function help()
-  --not much point for this until advanced mode is added, actually?
+  term.setTextColor(colors.white)
+  term.setBackgroundColor(colors.black)
+
+  local pageNum=settings.advancedMenus and 2 or 1
+  local redraw=true
+
+  while true do
+    if redraw then
+      term.clear()
+      term.setCursorPos(1,1)
+      write(helpPages[pageNum])
+      redraw=false
+    end
+
+    local e={os.pullEvent()}
+    if e[1]=="key" then
+      if e[2]==keys.tab then
+        pageNum=pageNum%#helpPages+1
+        redraw=true
+      elseif e[2]==keys.leftCtrl then
+        break
+      end
+    end
+  end
+
+  dirtyLines.all=true
 end
 
 local charKeys={[57]=' ', [43]='\\', [83]='.', [2]='1', [3]='2', [4]='3', [5]='4', [6]='5', [7]='6', [8]='7', [9]='8', [10]='9', [11]='0', [12]='-', [13]='=', [51]=',', [52]='.', [53]='/', [181]='/', [55]='*', [26]='[', [27]=']', [71]='7', [72]='8', [73]='9', [74]='-', [75]='4', [76]='5', [77]='6', [78]='+', [79]='1', [80]='2', [81]='3', [39]=';', [40]='"', [41]='`', [82]='0', [30]='a', [48]='b', [46]='c', [32]='d', [18]='e', [33]='f', [34]='g', [35]='h', [23]='i', [36]='j', [37]='k', [38]='l', [50]='m', [49]='n', [24]='o', [25]='p', [16]='q', [19]='r', [31]='s', [20]='t', [22]='u', [47]='v', [17]='w', [45]='x', [21]='y', [44]='z', }
@@ -1350,7 +1414,7 @@ while running do
         if index==1 and lineNum>1 then
           setCursorPos(#lines[lineNum-1].rawText+1,lineNum-1)
         else
-          moveCursor(-1,0)
+          setCursorPos(index-1,lineNum)
         end
         doCursor()
       elseif key==keys.pageDown then
@@ -1363,7 +1427,6 @@ while running do
         else
           mainMenu:show()
         end
-        --doCursor()
       elseif key==keys.enter then
         if selectBounds then
           deleteSelection()
