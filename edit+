@@ -741,7 +741,7 @@ local function run()
     succ=false
   else
     setfenv(func,runEnv)
-    succ,err=pcall(func end)
+    succ,err=pcall(func)
   end
 
   term.setTextColor(colors.white)
