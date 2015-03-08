@@ -434,6 +434,7 @@ local function setCursorPos(newX,newY)
     screenY=1
   end
   curPos.y=screenY
+
   local screenX=newX-scrollPos.x+1
   if screenX>viewRect.w then
     setScrollX(newX-viewRect.w+1)
@@ -840,7 +841,9 @@ local commands = {
      end,
    },
 
-   ["help"] = help,
+  ["help"] = {
+      func=help,
+    },
 }
 
 local basicMenuDef={
@@ -1289,8 +1292,9 @@ while running do
         end
         doCursor()
       elseif key==keys.left then
-        if curPos.x==1 and curPos.y+scrollPos.y>2 then
-          setCursorPos(#lines[curPos.y+scrollPos.y-2].rawText+1,curPos.y+scrollPos.y-2)
+        local lineNum, index = curTextPos()
+        if index==1 and lineNum>1 then
+          setCursorPos(#lines[lineNum-1].rawText+1,lineNum-1)
         else
           moveCursor(-1,0)
         end
