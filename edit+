@@ -105,6 +105,8 @@ if args[1]=="--update" then
     end
   end
   print("updating files...")
+  local path=shell.dir().."/"
+
   function grabFile(name)
     write("downloading '"..name.."'...")
 
@@ -123,7 +125,7 @@ if args[1]=="--update" then
     req.close()
 
 
-    local file=fs.open(name,"w")
+    local file=fs.open(path..name,"w")
     if not file then
       error("Couldn't open file '"..name.."' for writing!")
     end
@@ -299,7 +301,8 @@ end
 
 local function redrawFrom(index)
   for y=index,h do
-    redrawLine(y)
+    dirtyLines[y]=true
+    --redrawLine(y)
   end
 end
 
@@ -503,7 +506,7 @@ local function updateLine(lineNum,newText,noProp,scream)
   local prevEndState=line.state
   line=hilight.hilightToSpans(newText,prevLineState)
   lines[lineNum]=line
-  redrawLine(curPos.y)
+  dirtyLines[curPos.y]=true
   --check for an end state change and flag to propagate
   if not hilight.compareStates(line.state,prevEndState) then
     local prevState=line.state
@@ -831,6 +834,8 @@ local commands = {
         dirtyLines[h]=true
      end,
    },
+
+   ["help"] = help,
 }
 
 local basicMenuDef={
@@ -1273,7 +1278,7 @@ while running do
         if curPos.x>index then
           curPos.x=index
         end
-        if curPos.x+scrollPos.x-1>#lines[lineNum].rawText then
+        if curPos.x+scrollPos.x-1>#lines[lineNum].rawText and curPos.y+scrollPos.y-1<#lines then
           setCursorPos(1,curPos.y+scrollPos.y)
         else
           moveCursor(1,0)
@@ -1308,6 +1313,7 @@ while running do
         updateLine(lineNum,pre,true)
         table.insert(lines,lineNum+1,{state={}})
         updateLine(lineNum+1,post)
+        redrawFrom(lineNum)
         setCursorPos(1,lineNum+1)
 
       elseif key==keys.backspace then

@@ -13,6 +13,7 @@ if #args>0 then
   end
 end
 
+local path=shell.dir().."/"
 
 function grabFile(name)
   write("downloading '"..name.."'...")
@@ -32,7 +33,7 @@ function grabFile(name)
   req.close()
 
 
-  local file=fs.open(name,"w")
+  local file=fs.open(path..name,"w")
   if not file then
     error("Couldn't open file '"..name.."' for writing!")
   end
