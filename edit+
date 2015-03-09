@@ -5,7 +5,7 @@
 local programDir=shell.getRunningProgram():match("^(.-/?)[^/]+$")
 
 
-function grabFile(name,load)
+function grabFile(branch,name,load)
   write("downloading '"..name.."'...")
 
   local req=http.get("https://raw.githubusercontent.com/GopherAtl/edit-plus/"..branch.."/"..name)
@@ -53,7 +53,7 @@ local function loadAPI(name, downloadIfMissing)
     end
     if not _G[name] then
       if downloadIfMissing then
-        grabFile(name,true)
+        grabFile(settings.branch,name,true)
       else
         error("Couldn't find "..name.." api!")
       end
@@ -145,11 +145,12 @@ if args[1]=="--update" then
   local path=shell.dir().."/"
 
 
-  grabFile("edit+")
-  grabFile("hilight")
-  grabFile("document")
+  grabFile(branch,"edit+")
+  grabFile(branch,"hilight")
+  grabFile(branch,"document")
   --note this in the settings, we'll force-reload the APIs
   settings.freshUpdate=true
+  settings.branch=branch
   saveSettings()
   return
 end
