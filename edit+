@@ -4,33 +4,71 @@
 
 local programDir=shell.getRunningProgram():match("^(.-/?)[^/]+$")
 
-if not hilight then
-  --search for it
-  local searchPaths={"/",shell.dir().."/","apis/",programDir,"/usr/lib/","/lib/"}
-  for i=1,#searchPaths do
-
-    if searchPaths[i]==nil then
-      print(shell.getRunningProgram())
-      print(shell.getRunningProgram():match("^(.-/)%w+$"))
-    end
-    if fs.exists(searchPaths[i].."hilight") then
-      os.loadAPI(searchPaths[i].."hilight")
-      break
-    end
-  end
-  if not hilight then
-    error("Couldn't find hilight api anywhere!")
-  end
-end
-
-if hilight==nil then
-  error("hilight not loaded?")
-end
-
 local settings = {
   recentFiles = { },
   syntaxStyle = "pastebin",
 }
+
+
+function grabFile(branch,name,load)
+  write("downloading '"..name.."'...")
+
+  local req=http.get("https://raw.githubusercontent.com/GopherAtl/edit-plus/"..branch.."/"..name)
+  if req==nil then
+    error("Cound't make request!")
+  end
+
+  if req.getResponseCode()~=200 then
+    req.close()
+    error("Unexpected response code "..req.getResponseCode())
+  end
+
+  local text=req.readAll()
+
+  req.close()
+
+
+  local file=fs.open(programDir..name,"w")
+  if not file then
+    error("Couldn't open file '"..name.."' for writing!")
+  end
+
+  file.write(text)
+  file.close()
+  print("success! "..#text.." bytes")
+  if load then
+    os.loadAPI(programDir..name)
+  end
+end
+
+
+
+local function loadAPI(name, downloadIfMissing)
+  if not _G[name] then
+    --search for it
+    local searchPaths={"/",shell.dir().."/","apis/",programDir,"/usr/lib/","/lib/"}
+    for i=1,#searchPaths do
+
+      if searchPaths[i]==nil then
+        print(shell.getRunningProgram())
+        print(shell.getRunningProgram():match("^(.-/)%w+$"))
+      end
+      if fs.exists(searchPaths[i]..name) then
+        os.loadAPI(searchPaths[i]..name)
+        break
+      end
+    end
+    if not _G[name] then
+      if downloadIfMissing then
+        grabFile(settings.branch,name,true)
+      else
+        error("Couldn't find "..name.." api!")
+      end
+    end
+  end
+end
+
+
 
 local settingsPath
 
@@ -81,6 +119,8 @@ else
   end
 end
 
+
+
 local args={...}
 
 
@@ -107,39 +147,35 @@ if args[1]=="--update" then
   print("updating files...")
   local path=shell.dir().."/"
 
-  function grabFile(name)
-    write("downloading '"..name.."'...")
-
-    local req=http.get("https://raw.githubusercontent.com/GopherAtl/edit-plus/"..branch.."/"..name)
-    if req==nil then
-      error("Cound't make request!")
-    end
-
-    if req.getResponseCode()~=200 then
-      req.close()
-      error("Unexpected response code "..req.getResponseCode())
-    end
-
-    local text=req.readAll()
-
+  local filelist
+  do
+    local req=http.get("https://raw.githubusercontent.com/GopherAtl/edit-plus/"..branch.."/filelist.txt")
+    filelist=req.readAll()
     req.close()
-
-
-    local file=fs.open(programDir..name,"w")
-    if not file then
-      error("Couldn't open file '"..name.."' for writing!")
-    end
-
-    file.write(text)
-    file.close()
-    print("success! "..#text.." bytes")
   end
 
-  grabFile("edit+")
-  grabFile("hilight")
+  for ftype,fname in filelist:gmatch("(%w+):([%w%+]+)") do
+    grabFile(branch,fname)
+  end
+  --note this in the settings, we'll force-reload the APIs
+  settings.freshUpdate=true
+  settings.branch=branch
+  saveSettings()
   return
 end
 
+if settings.freshUpdate then
+  if hilight then os.unloadAPI("hilight") end
+  if document then os.unloadAPI("document") end
+  settings.freshUpdate=nil
+  saveSettings()
+  --load, downloading if they're missing completely (as apis added in this update will be,
+  --since old update didn't know to download them)
+  loadAPI("hilight",true)
+else
+  --load /without/ downloading
+  loadAPI("hilight")
+end
 
 
 local filename=args[1]
