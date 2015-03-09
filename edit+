@@ -1061,7 +1061,7 @@ function drawMenuItem_basic(item,x,y,width,isSelected)
   end
   if item.embedKey then
     term.write("("..item.hk..")"..item.post)
-    w=w+2+#hk+#post
+    w=w+2+#hk+#item.post
     term.write((" "):rep(width-w))
   else
     term.write((" "):rep(width-w-1-#item.hk)..item.hk.." ")
