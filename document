@@ -1,0 +1,1010 @@
+--[[
+document object
+may re-integrate later, but for dev convenience,
+going to separate out from the main edit+ file
+
+Also helps with the overhaul to have it in
+isolated, as the methods I can more easily
+control the interface, what is internal and
+what is external.
+--]]
+
+--[[############################
+  Classes
+]]
+--[[============================
+  class document declarations
+]]
+
+--class table itself
+local class_document = {
+}
+
+--metatable form
+local class_document_meta = {
+   __index=class_document
+}
+--map of object table->privates table
+local privates = { }
+
+--[[############################
+  clipboard
+]]
+
+
+--[[
+we define our own clipboard, but for future compatibility with OSs that provide
+an inter-app clipboard, we use accessors through a clipboard object, so wrappers
+for any native os clipboard can be made to provide compatibility
+--]]
+local internal_clipboard={}
+do
+  local internal_clipboard_data
+  function internal_clipboard.set(value)
+    internal_clipboard_data=value
+  end
+
+  function internal_clipboard.get()
+    return internal_clipboard_data
+  end
+end
+
+--the clipboard object we will refer to
+local clipboard=internal_clipboard
+
+function assignClipboard(newClipboard)
+  local function hasFunc(name)
+    return newClipboard[name] and type(newClipboard.name)=="function"
+  end
+  if hasFunc("set") and hasFunc("get") then
+    clipboard=newClipboard
+    return true
+  end
+  --error - incompatible clipboard object specified
+end
+
+--[[############################
+  document class members
+]]
+
+--[[============================
+  Accessors
+]]
+
+--[[------------------
+  textPos accessors
+]]
+
+function class_document:getTextPos()
+  --return a copy, no mucking with the actual directly!
+  return {x=privates[self].textPos.x, y=privates[self].textPos.y}
+end
+
+function class_document:getTextX()
+  return privates[self].textPos.x
+end
+
+function class_document:getTextY()
+  return privates[self].textPos.y
+end
+
+
+function class_document:setTextPos(newX,newY)
+  local priv=privates[self]
+
+  local curPos=priv.curPos
+  local scrollPos=priv.scrollPos
+  local textPos=priv.textPos
+
+  newY=math.min(#priv.lines,math.max(1,newY or (curPos.y+scrollPos.y-1)))
+  newX=math.max(1,newX)
+
+  textPos.x=newX
+  textPos.y=newY
+
+  local viewRect=priv.viewRect
+  local screenY=newY-scrollPos.y+1
+  if screenY>viewRect.h then
+    self:scrollY(screenY-viewRect.h)
+    screenY=viewRect.h
+  elseif screenY<1 then
+    self:scrollY(screenY-1)
+    screenY=1
+  end
+  curPos.y=screenY
+
+  local screenX=newX-scrollPos.x+1
+  if screenX>viewRect.w then
+    self:setScrollX(newX-viewRect.w+1)
+    screenX=viewRect.w
+  elseif screenX<1 then
+    self:setScrollX(scrollPos.x+screenX-1)
+    screenX=1
+  end
+  curPos.x=screenX
+
+  if priv.blockSelecting then
+    local dragFrom=priv.blockStart
+    local dragTo={x=newX, y=newY}
+    if dragTo.y<dragFrom.y or (dragTo.y==dragFrom.y and dragTo.x<dragFrom.x) then
+      newBounds={dragTo,dragFrom}
+    else
+      newBounds={dragFrom,dragTo}
+    end
+    self:updateSelect(newBounds)
+  else
+    self:updateSelect()
+  end
+
+  self:drawLineNum()
+end
+
+
+function class_document:setTextX(x)
+  return self:setTextPos(x,privates[self].textPos.y)
+end
+
+function class_document:setTextY(y)
+  return self:setTextPos(privates[self].textPos.x,y)
+end
+
+
+--[[------------------
+  curPos accessors
+]]
+
+function class_document:getCurPos()
+  --return a copy, no mucking with the actual directly!
+  return {x=privates[self].curPos.x, y=privates[self].curPos.y}
+end
+
+function class_document:getCurX()
+  return privates[self].curPos.x
+end
+
+function class_document:getCurY()
+  return privates[self].curPos.y
+end
+
+function class_document:setCurPos(newX,newY)
+  local scrollPos=privates[self].scrollPos
+  self:setTextPos(newX+scrollPos.x-1,newY+scrollPos.y-1)
+end
+
+--[[------------------
+  scrollPos accessors
+]]
+
+
+function class_document:getScrollPos()
+  --return a copy, no mucking with the actual directly!
+  return {x=privates[self].scrollPos.x, y=privates[self].scrollPos.y}
+end
+
+function class_document:getScrollX()
+  return privates[self].scrollPos.x
+end
+
+function class_document:getScrollY()
+  return privates[self].scrollPos.y
+end
+
+
+function class_document:setScrollPos(newX,newY)
+  self:setScrollY(self,newY)
+  self:setSCrollX(self,newX)
+end
+
+function class_document:setScrollX(newX)
+  local priv=privates[self]
+  local scrollPos=priv.scrollPos
+  local textPos=priv.textPos
+
+  local target=math.max(math.min(newX,#priv.lines[textPos.y].rawText-priv.viewRect.w+2),1)
+  if target~=scrollPos.x then
+    scrollPos.x=target
+    priv.dirtyLines.all=true
+  end
+end
+
+function class_document:setScrollY(newY,leaveCursor)
+  local priv=privates[self]
+  local scrollPos=priv.scrollPos
+  local viewRect=priv.viewRect
+  local lines=priv.lines
+  local curPos=priv.curPos
+  local textPos=priv.textPos
+
+  local target=math.max(math.min(newY,#lines-viewRect.h+1),1)
+  if target~=scrollPos.y then
+    local offset=target-scrollPos.y
+    scrollPos.y=target
+    term.scroll(offset)
+    priv.dirtyLines.all=true
+    if leaveCursor then
+      curPos.y=curPos.y-offset
+    end
+    return true
+  end
+end
+
+--[[============================
+  Methods
+]]
+
+--[[------------------
+  drawLineNum
+  draws the current cursor position's line number on the bottom-right corner
+]]
+
+function class_document:drawLineNum()
+  local priv=privates[self]
+  local scrollPos=priv.scrollPos
+  local curPos=priv.curPos
+
+  lineNum=" "..tostring(scrollPos.y+curPos.y-1).." "
+  term.setCursorPos(priv.viewRect.w-#lineNum+1,priv.viewRect.h)
+  term.setBackgroundColor(colors.white)
+  term.setTextColor(colors.black)
+  term.write(lineNum)
+  term.setBackgroundColor(colors.black)
+  term.setTextColor(colors.white)
+end
+
+--[[------------------
+  updateViewRect
+  update the view rect, flagging lines for redraw if necessary
+]]
+
+function class_document:updateViewRect(viewRect)
+  local priv=privates[self]
+  local dirtyLines=priv.dirtyLines
+
+  for y=priv.viewRect.h+1,viewRect.h do
+    dirtyLines[i]=true
+  end
+  priv.viewRect=viewRect
+end
+
+--[[------------------
+  redrawLine
+  redraws a single line of screen from the document
+]]
+
+function class_document:redrawLine(screenLine)
+  local priv=privates[self]
+  local scrollPos=priv.scrollPos
+  local viewRect=priv.viewRect
+  local selectBounds=priv.selectBounds
+  local lines=priv.lines
+
+  local lineNum=screenLine+scrollPos.y-1
+  if lineNum<=#lines and screenLine<=viewRect.h then
+    local selStart,selEnd=0,-1
+    local spans=lines[lineNum]
+    if selectBounds and selectBounds[1].y<=lineNum and selectBounds[2].y>=lineNum then
+      --we'll be doing selecting here
+      selStart,selEnd=1,#spans.rawText+1
+      if selectBounds[1].y==lineNum then
+        selStart=selectBounds[1].x
+      end
+      if selectBounds[2].y==lineNum then
+        selEnd=selectBounds[2].x
+      end
+    end
+
+    term.setCursorPos(2-scrollPos.x,screenLine)
+    local index=1
+    for i=1,#spans do
+      local len=#spans[i].text
+      local subStart,subEnd=1,len
+      if index>selEnd or index+len-1<selStart then
+        subStart,subEnd=len+1,len+1
+      else
+        if selStart>=index then
+          subStart=selStart-index+1
+        end
+        if selEnd<index+len-1 then
+          subEnd=len - (index+len-1 - selEnd)
+        end
+      end
+      if subStart>1 then
+        term.setTextColor(spans[i].color)
+        term.write(spans[i].text:sub(1,subStart-1))
+      end
+      if subStart~=len+1 then
+        term.setTextColor(term.isColor() and colors.white or colors.black)
+        term.setBackgroundColor(term.isColor() and colors.blue or colors.white)
+        term.write(spans[i].text:sub(subStart,subEnd))
+        term.setBackgroundColor(colors.black)
+      end
+      if subEnd<len then
+        term.setTextColor(spans[i].color)
+        term.write(spans[i].text:sub(subEnd+1))
+      end
+      index=index+len
+    end
+    if selEnd>#spans.rawText then
+      term.setBackgroundColor(term.isColor() and colors.blue or colors.white)
+      term.write(" ")
+      term.setBackgroundColor(colors.black)
+    end
+
+    local x,y=term.getCursorPos()
+    term.write((" "):rep(math.max(0,priv.viewRect.w-x+1)))
+  else
+    term.setCursorPos(1,screenLine)
+    term.write((" "):rep(priv.viewRect.w))
+  end
+end
+
+--[[------------------
+  dirtyFrom
+  marks all lines from index to end of screen as needing to be redrawn
+]]
+
+
+function class_document:dirtyFrom(index)
+  local priv=privates[self]
+  local dirtyLines=priv.dirtyLines
+  for y=priv.curPos.y,priv.viewRect.h do
+    dirtyLines[y]=true
+  end
+end
+
+--[[------------------
+  redrawDirty
+  redraws all lines marked as dirty
+]]
+
+function class_document:redrawDirty()
+  local priv=privates[self]
+  local dirtyLines=priv.dirtyLines
+
+  if dirtyLines.all then
+    for i=1,priv.viewRect.h do
+      self:redrawLine(i)
+    end
+  else
+    for r,_ in pairs(dirtyLines) do
+       self:redrawLine(r)
+    end
+  end
+  --clear
+  priv.dirtyLines={}
+end
+
+--[[------------------
+  updateSelect
+  updates the selection area to a specified set of bounds
+]]
+
+function class_document:updateSelect(newBounds)
+  local priv=privates[self]
+  local startY,endY
+  local selectBounds=priv.selectBounds
+  local scrollPos=priv.scrollPos
+  local viewRect=priv.viewRect
+
+  if newBounds then
+    if selectBounds then
+      startY,endY=math.min(selectBounds[1].y,newBounds[1].y),math.max(selectBounds[2].y,newBounds[2].y)
+    else
+      startY,endY=newBounds[1].y,newBounds[2].y
+    end
+  elseif selectBounds then
+    priv.blockSelecting=nil
+    priv.blockStart=nil
+    startY,endY=selectBounds[1].y,selectBounds[2].y
+  else
+    priv.blockSelecting=nil
+    priv.blockStart=nil
+    return
+  end
+  priv.selectBounds=newBounds
+  for i=startY-scrollPos.y+1,endY-scrollPos.y+1 do
+    if i>=1 and i<=viewRect.h then
+      self:redrawLine(i)
+    end
+  end
+end
+
+--[[------------------
+  getLineLen
+  gets the length of a specified line of the file
+
+]]
+
+function class_document:getLineLen(lineNum)
+  local priv=privates[self]
+  lineNum=lineNum or priv.textPos.y
+  return priv.lines[lineNum] and #priv.lines[lineNum].rawText or 0
+end
+
+--[[------------------
+  trueCurPos
+  returns the "true" position of the cursor (as displayed, ignoring the 'virtual' x position)
+]]
+function class_document:trueCurPos()
+  local curPos=privates[self].curPos
+  local len=self:getLineLen()
+  return math.min(curPos.x,len-privates[self].scrollPos.x+2),curPos.y
+end
+
+
+--[[------------------
+  scrollY
+  scrolls vertically by some amount; if leaveCursor is true, the cursor
+  retains it's original text position
+]]
+function class_document:scrollY(offset,leaveCursor)
+  return self:setScrollY(privates[self].scrollPos.y+offset,leaveCursor)
+end
+
+
+--[[------------------
+  updateLine
+  changes the raw text of a specified line, redoing it's syntax hilighting and
+  optionally propagating the syntax hilight changes through the document.
+]]
+
+function class_document:updateLine(lineNum,newText,noProp)
+  local priv=privates[self]
+  local lines=priv.lines
+  local curPos=priv.curPos
+  local scrollPos=priv.scrollPos
+  local dirtyLines=priv.dirtyLines
+
+  local prevLineState={}
+
+  newText=newText or lines[lineNum].rawText
+  if lineNum>1 then
+    prevLineState=lines[lineNum-1].state
+  end
+  local line=lines[lineNum]
+  local prevEndState=line.state
+  line=hilight.hilightToSpans(newText,prevLineState)
+  lines[lineNum]=line
+  dirtyLines[curPos.y]=true
+  --check for an end state change and flag to propagate
+  if not hilight.compareStates(line.state,prevEndState) then
+    local prevState=line.state
+    --for now just redoing whole file if needed, will make it incremental and/or deferred later
+    if not noProp then
+      for i=lineNum+1,#lines do
+        prevEndState=lines[i].state
+        lines[i]=hilight.hilightToSpans(lines[i].rawText,prevState)
+        if i-scrollPos.y+1 <= priv.viewRect.h then
+          dirtyLines[i-scrollPos.y+1]=true
+        end
+        prevState=lines[i].state
+        --stop iterating if the state returns to expected
+        if hilight.compareStates(prevState,prevEndState) then
+          break
+        end
+      end
+    end
+  end
+end
+
+--[[------------------
+  textToCurPos(textPos)
+  converts a position in text coords to screen coords
+]]
+
+function class_document:textToCurPos(textPos)
+  local scrollPos=privates[self].scrollPos
+  return {y=textPos.y-scrollPos.y+1,x=textPos.x-scrollPos.x+1}
+end
+
+
+--[[------------------
+  deleteSelection
+  deletes any text contained in the selection box
+]]
+
+
+function class_document:deleteSelection()
+  local priv=privates[self]
+  priv.blockSelecting=false
+
+  if priv.selectBounds then
+    local selectBounds=priv.selectBounds
+    local lines=priv.lines
+
+    local startY,endY=selectBounds[1].y,selectBounds[2].y
+    local selectBounds=selectBounds
+    self:setTextPos(selectBounds[1].x,selectBounds[1].y)
+    self:updateSelect()
+    local prevEndState=lines[endY].state
+    if startY==endY then
+      local text=lines[startY].rawText
+      self:updateLine(startY,text:sub(1,selectBounds[1].x-1)..text:sub(selectBounds[2].x+1))
+    else
+      local newText=lines[startY].rawText:sub(1,selectBounds[1].x-1,noProp)..lines[endY].rawText:sub(selectBounds[2].x+1)
+      for i=startY+1,endY do
+        table.remove(lines,startY+1)
+      end
+      self:updateLine(startY,newText,false)
+      if not hilight.compareStates(lines[startY].state,prevEndState) then
+        self:updateLine(startY+1)
+      end
+      self:dirtyFrom(startY-priv.scrollPos.y+2)
+    end
+  end
+end
+
+--[[------------------
+  insertText
+]]
+
+function class_document:insertText(text)
+  local priv=privates[self]
+  if priv.selectBounds then
+    self:deleteSelection()
+  end
+
+  --get the affected line and actual x position in line
+  local textPos= self:getTextPos()
+  local line=priv.lines[textPos.y]
+  --insert our char!
+  local newText=line.rawText:sub(1,textPos.x-1)..text..line.rawText:sub(textPos.x)
+  self:updateLine(textPos.y,newText)
+  self:moveCursor(#text,0)
+  if priv.curPos.x-priv.scrollPos.x+1>priv.viewRect.w then
+    self:setScrollX(priv.curPos.x-priv.viewRect.w+1)
+  end
+end
+
+--[[------------------
+  moveCursor
+  moves the cursor by a specified offset
+]]
+function class_document:moveCursor(x,y)
+  y=y or 0
+  local textPos=privates[self].textPos
+  self:setTextPos(textPos.x+x,textPos.y+y)
+end
+
+
+--[[------------------
+  decreaseIndent
+  decreases the indentation level of the current line or selected block by one
+]]
+
+function class_document:decreaseIndent()
+  local priv=privates[self]
+  local selectBounds=priv.selectBounds
+  local lines=priv.lines
+  if selectBounds then
+    for y=selectBounds[1].y,selectBounds[2].y do
+      local text=lines[y].rawText
+      local curCount=#text:match("^%s*")
+      local tab=curCount>0 and (curCount%2==0 and 2 or 1)
+      if tab then
+        if y==selectBounds[1].y then
+          selectBounds[1].x=selectBounds[1].x-tab
+        end
+        if y==selectBounds[2].y then
+          selectBounds[2].x=selectBounds[2].x-tab
+        end
+        self:updateLine(y,text:sub(1+tab))
+        if y==priv.curPos.y+priv.scrollPos.y-1 then
+          self:setTextX(priv.curPos.x-tab)
+        end
+      end
+    end
+
+    self:dirtyFrom(selectBounds[1].y-priv.scrollPos.y+1)
+  else
+    local textPos=priv.textPos
+    local text=lines[textPos.y].rawText
+    local curCount=#text:match("^%s*")
+    local tab=curCount>0 and (curCount%2==0 and 2 or 1)
+    if tab then
+      self:updateLine(textPos.y,text:sub(1+tab))
+      self:moveCursor(-tab,0)
+    end
+  end
+end
+
+
+--[[------------------
+  increaseIndent
+  increases indentation level of the current line or block by one
+]]
+
+function class_document:increaseIndent()
+  local priv=privates[self]
+  local selectBounds=priv.selectBounds
+  local lines=priv.lines
+
+  if selectBounds then
+    for y=selectBounds[1].y,selectBounds[2].y do
+      local curCount=#lines[y].rawText:match("^%s*")
+      local tab=curCount%2==0 and 2 or 1
+      updateLine(y,(" "):rep(tab)..lines[y].rawText)
+      if y==selectBounds[1].y then
+        selectBounds[1].x=selectBounds[1].x+tab
+      end
+      if y==selectBounds[2].y then
+        selectBounds[2].x=selectBounds[2].x+tab
+      end
+      if y==priv.curPos.y+priv.scrollPos.y-1 then
+        self:moveCursor(tab)
+      end
+    end
+    self:dirtyFrom(selectBounds[1].y-priv.scrollPos.y+1)
+  else
+    local text=lines[priv.textPos.y].rawText
+    local curCount=#text:match("^%s*")
+    local tab=curCount%2==0 and 2 or 1
+    self:updateLine(priv.textPos.y,(" "):rep(tab)..text)
+    self:moveCursor(tab)
+  end
+end
+
+--[[------------------
+]]
+
+
+function class_document:save()
+  local priv=privates[self]
+  local filePath=priv.fileDir..priv.fileName
+
+  local file=io.open(filePath,"w")
+  if file then
+    for i=1,#lines do
+      if i~=1 then
+        file:write("\n")
+      end
+      file:write(priv.lines[i].rawText)
+    end
+    file:close()
+  else
+    --TODO: error couldn't save - read only most likely?
+  end
+end
+
+
+--[[------------------
+]]
+
+function class_document:dirtyAll()
+  privates[self].dirtyLines.all=true
+end
+
+
+--[[------------------
+]]
+
+function class_document:getFilePath()
+  return privates[self].fileDir..privates[self].fileName
+end
+
+--[[------------------
+  copy
+  copies the selected text to the clipboard; does not change the selection
+]]
+
+function class_document:copy()
+  local priv=privates[self]
+  local selectBounds=priv.selectBounds
+
+  priv.blockSelecting=false
+
+  if selectBounds then
+    local lines=priv.lines
+    local startY,endY=selectBounds[1].y,selectBounds[2].y
+    local selectBounds=selectBounds
+    local clip={}
+    if startY==endY then
+      clip[1]=lines[startY].rawText:sub(selectBounds[1].x,selectBounds[2].x)
+    else
+      clip[1]=lines[startY].rawText:sub(selectBounds[1].x)
+      for y=startY+1,endY-1 do
+        clip[#clip+1]=lines[y].rawText
+      end
+      clip[#clip+1]=lines[endY].rawText:sub(1,selectBounds[2].x)
+    end
+
+    clipboard.set(clip)
+  end
+end
+
+--[[------------------
+  cut
+  copies the selected text to clipboard and then removes it
+]]
+
+function class_document:cut()
+  self:copy()
+  self:deleteSelection()
+end
+
+--[[------------------
+  paste
+  inserts the text in the clipboard, if any, at the cursor position, replacing any selected text
+]]
+
+function class_document:paste()
+  local clip=clipboard.get()
+  if clip then
+    local priv=privates[self]
+    local lines=priv.lines
+    local textPos=priv.textPos
+
+    --delete selection, if any, as we'll replace
+    self:deleteSelection()
+
+    --split this line at cursor
+    local before,after=lines[textPos.y].rawText:sub(1,textPos.x-1),lines[textPos.y].rawText:sub(textPos.x)
+    local newLines={}
+    --append first cb line to before for first line
+    newLines[1]=before..clip[1]
+    --rest will be new lines
+    for i=2,#clip do
+      newLines[i]=clip[i]
+    end
+    --append after to last
+    local newX=#newLines[#newLines]+1
+    newLines[#newLines]=newLines[#newLines]..after
+
+    --ok, update first line
+    --insert rest
+    local prevState=lines[textPos.y].state
+    for i=2,#newLines do
+      table.insert(lines,textPos.y+i-1,{state=hilight.copyState(prevState)})
+      self:updateLine(textPos.y+i-1,newLines[i],i==#newLines,true)
+    end
+    self:updateLine(textPos.y,newLines[1],false)
+    self:dirtyFrom(textPos.y-priv.scrollPos.y+1)
+    --new cursor pos will be in that last line
+    self:setTextPos(newX,textPos.y+#newLines-1)
+  end
+end
+
+--[[------------------
+  toggleBlockSelecting
+  toggles cursor-based block selection on/off
+]]
+function class_document:toggleBlockSelecting()
+  local priv=privates[self]
+  if priv.blockSelecting then
+    priv.blockSelecting=false
+  else
+    priv.blockSelecting=true
+    priv.blockStart=curToTextPos(priv.curPos)
+    self:updateSelect({blockStart,blockStart})
+  end
+end
+
+--[[------------------
+  dragSelect
+  does a dragSelect, from blockStart, or the cursor position if blockStart unset, to the
+  specified position in screen coords
+]]
+
+function class_document:dragSelect(dragTo)
+  local priv=privates[self]
+
+  if not priv.blockStart then
+    priv.blockStart = self:getTextPos()
+  end
+  dragTo=self:curToTextPos(dragTo)
+
+  local newBounds
+  local dragFrom=priv.blockStart
+  if dragTo.y<dragFrom.y or (dragTo.y==dragFrom.y and dragTo.x<dragFrom.x) then
+    newBounds={dragTo,dragFrom}
+  else
+    newBounds={dragFrom,dragTo}
+  end
+  self:updateSelect(newBounds)
+end
+
+--[[------------------
+  cursorRight
+  moves the cursor right, wrapping past end of line to next line if needed
+]]
+
+function class_document:cursorRight()
+  local priv=privates[self]
+  local textPos=priv.textPos
+  local scrollPos=priv.scrollPos
+
+  if textPos.x>#priv.lines[textPos.y].rawText then
+    if textPos.y<#priv.lines then
+      self:setTextPos(1,textPos.y+1)
+    end
+  else
+    self:moveCursor(1)
+  end
+end
+
+--[[------------------
+  cursorLeft
+  moves the cursor left, wrapping past end of line to prev line if needed
+]]
+
+function class_document:cursorLeft()
+  local priv=privates[self]
+  local textPos=priv.textPos
+
+  if textPos.x==1 and textPos.y>1 then
+    self:setTextPos(#priv.lines[textPos.y-1].rawText+1,textPos.y-1)
+  elseif textPos.x>#priv.lines[textPos.y].rawText then
+    self:setTextX(#priv.lines[textPos.y].rawText)
+  else
+    self:moveCursor(-1)
+  end
+end
+--[[------------------
+  cursordown
+  moves the cursor down, scrolling if necessary
+]]
+
+function class_document:cursorDown(amt)
+  self:moveCursor(0,amt or 1)
+end
+
+--[[------------------
+  cursorUp
+  moves the cursor up, scrolling if necessary
+]]
+
+function class_document:cursorUp(amt)
+  self:moveCursor(0,-(amt or 1))
+end
+
+
+--[[------------------
+  insertNewline
+  inserts a newline at the cursor
+]]
+
+function class_document:insertNewline()
+  local priv=privates[self]
+  if priv.selectBounds then
+    self:deleteSelection()
+  end
+
+  --carry on with the cr
+  local lines=priv.lines
+  local textPos=priv.textPos
+
+  local curText=lines[textPos.y].rawText
+  local pre,post=curText:sub(1,textPos.x-1),curText:sub(textPos.x)
+  self:dirtyFrom(priv.curPos.y)
+  self:updateLine(textPos.y,pre,true)
+  table.insert(lines,textPos.y+1,{state={}})
+  self:updateLine(textPos.y+1,post)
+  self:setCurPos(1,textPos.y+1)
+end
+
+--[[------------------
+  deleteCharAt
+  deletes a single character at a specified position;
+  index 0 deletes the newline preceeding the specified line
+  an index greater than the width of the line deletes the newline following it
+]]
+
+
+function class_document:deleteCharAt(xpos,ypos)
+  --TODO: implement and reduce backspace and delete
+end
+
+--[[------------------
+  backspace
+  backspaces once at current cursor pos
+]]
+
+function class_document:backspace()
+  local priv=privates[self]
+  if priv.selectBounds then
+    self:deleteSelection()
+  else
+    local textPos=priv.textPos
+    local lines=priv.lines
+    if textPos.x==1 then
+      if textPos.y>1 then
+        local prevLine=lines[textPos.y-1]
+        local xp=#prevLine.rawText+1
+        local curLine=table.remove(lines,textPos.y)
+
+        self:updateLine(textPos.y-1,prevLine.rawText..curLine.rawText)
+        self:setTextPos(xp,textPos.y-1)
+        self:dirtyFrom(priv.curPos.y)
+      end
+    else
+      local curText=lines[textPos.y].rawText
+      local newText=curText:sub(1,textPos.x-2)..curText:sub(textPos.x)
+      self:updateLine(textPos.y,newText)
+      self:setTextPos(textPos.x-1,textPos.y)
+    end
+  end
+end
+
+--[[------------------
+  delete
+  deletes a character to the right of the cursor
+]]
+
+function class_document:delete()
+  local priv=privates[self]
+  if priv.selectBounds then
+    self:deleteSelection()
+  else
+    local textPos=priv.textPos
+    local lines=priv.lines
+
+    local curText=lines[textPos.y].rawText
+    if textPos.x==#curText+1 then
+      if textPos.y<#lines then
+        local nextLine=table.remove(lines,textPos.y+1)
+        self:updateLine(textPos.y,curText..nextLine.rawText)
+        self:dirtyFrom(priv.curPos.y)
+      end
+    else
+      local newText=curText:sub(1,textPos.x-1)..curText:sub(textPos.x+1)
+      self:updateLine(textPos.y,newText)
+      self:setTextX(textPos.x)
+    end
+  end
+end
+
+--[[------------------
+]]
+
+function class_document:curToTextPos(pos)
+  local scrollPos=privates[self].scrollPos
+  local res={x=pos.x+scrollPos.x-1,y=pos.y+scrollPos.y-1}
+  res.x=math.min(res.x,#privates[self].lines[res.y].rawText)
+  return res
+end
+
+--[[============================
+  Constructor
+]]
+
+
+function new(filePath)
+
+  local newDoc={}
+  setmetatable(newDoc,class_document_meta)
+
+  local lines={}
+  do
+    local prevState={}
+    local file=io.open(filePath,"r")
+    if file~=nil then
+      for line in file:lines() do
+        lines[#lines+1]=hilight.hilightToSpans(line,prevState)
+        prevState=lines[#lines].state
+      end
+      file:close()
+    else
+      lines[1]={rawText="",state={}}
+    end
+  end
+
+  local fileDir,fileName = filePath:match("^(.-/?)([^/]+)$")
+  local w,h=term.getSize()
+
+  local newPriv={
+      curPos = {x=1,y=1},
+      textPos = {x=1,y=1},
+      scrollPos = {x=1, y=1},
+      fileDir=fileDir,
+      fileName=fileName,
+      dirtyLines={all=true},
+      lines=lines,
+      selectBounds,
+      viewRect={x=1,y=1,w=w,h=h},
+
+    }
+
+  privates[newDoc]=newPriv
+
+  return newDoc
+end

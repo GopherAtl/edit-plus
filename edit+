@@ -4,28 +4,31 @@
 
 local programDir=shell.getRunningProgram():match("^(.-/?)[^/]+$")
 
-if not hilight then
-  --search for it
-  local searchPaths={"/",shell.dir().."/","apis/",programDir,"/usr/lib/","/lib/"}
-  for i=1,#searchPaths do
+local function loadAPI(name)
+  if not _G[name] then
+    --search for it
+    local searchPaths={"/",shell.dir().."/","apis/",programDir,"/usr/lib/","/lib/"}
+    for i=1,#searchPaths do
 
-    if searchPaths[i]==nil then
-      print(shell.getRunningProgram())
-      print(shell.getRunningProgram():match("^(.-/)%w+$"))
+      if searchPaths[i]==nil then
+        print(shell.getRunningProgram())
+        print(shell.getRunningProgram():match("^(.-/)%w+$"))
+      end
+      if fs.exists(searchPaths[i]..name) then
+        os.loadAPI(searchPaths[i]..name)
+        break
+      end
     end
-    if fs.exists(searchPaths[i].."hilight") then
-      os.loadAPI(searchPaths[i].."hilight")
-      break
+    if not _G[name] then
+      error("Couldn't find "..name.." api!")
     end
-  end
-  if not hilight then
-    error("Couldn't find hilight api anywhere!")
   end
 end
 
-if hilight==nil then
-  error("hilight not loaded?")
-end
+loadAPI("hilight")
+os.unloadAPI("document")
+loadAPI("document")
+
 
 local settings = {
   recentFiles = { },
@@ -145,34 +148,15 @@ end
 local filename=args[1]
 
 local filePath=shell.dir().."/"..filename
-local lines={}
 
-local prevState
-
-do
-  local prevState={}
-  local file=io.open(filePath,"r")
-  if file~=nil then
-    for line in file:lines() do
-      lines[#lines+1]=hilight.hilightToSpans(line,prevState)
-      prevState=lines[#lines].state
-    end
-    file:close()
-  else
-    lines[1]={rawText="",state={}}
-  end
-end
-
-
+local activeDoc = document.new(filePath)
 
 
 term.clear()
 
 local running=true
 local w,h=term.getSize()
-local scrollPos={x=1,y=1}
-local curPos={x=1,y=1}
-local selectBounds
+
 local lastClickPos={x=1,y=1}
 local clipboard
 
@@ -181,8 +165,6 @@ local mainMenu, advancedMenu, contextMenu
 
 local guiElements = {}
 local activeGuiElement=0
-
-local dirtyLines={}
 
 local drawMenu
 
@@ -196,170 +178,33 @@ local function updateViewRect()
       w=w,
       h=settings.hideMenus and h or (h-1),
     }
+  activeDoc:updateViewRect(viewRect)
 end
 
 updateViewRect()
 
-local function curToTextPos(curPos)
-  local lineNum=curPos.y+scrollPos.y-1
-  local index
-  if lineNum>#lines then
-    lineNum=#lines
-    index=#lines[#lines].rawText+1
-  else
-    index=math.min(curPos.x+scrollPos.x-1,#lines[lineNum].rawText+1)
-  end
-  return {x=index,y=lineNum}
-end
-
-local function textToCurPos(textPos)
-  return {
-      x=textPos.x-scrollPos.x+1,
-      y=textPos.y-scrollPos.y+1,
-  }
-end
-
-
-local function drawLineNum()
-  lineNum=" "..tostring(scrollPos.y+curPos.y-1).." "
-  term.setCursorPos(w-#lineNum+1,h)
-  term.setBackgroundColor(colors.white)
-  term.setTextColor(colors.black)
-  term.write(lineNum)
-  term.setBackgroundColor(colors.black)
-  term.setTextColor(colors.white)
-end
-
 local function redrawLine(screenLine)
-  local lineNum=screenLine+scrollPos.y-1
-  if lineNum<=#lines and screenLine<=viewRect.h then
-    local selStart,selEnd=0,-1
-    local spans=lines[lineNum]
-    if selectBounds and selectBounds[1].y<=lineNum and selectBounds[2].y>=lineNum then
-      --we'll be doing selecting here
-      selStart,selEnd=1,#spans.rawText+1
-      if selectBounds[1].y==lineNum then
-        selStart=selectBounds[1].x
-      end
-      if selectBounds[2].y==lineNum then
-        selEnd=selectBounds[2].x
-      end
-    end
+  activeDoc:redrawLine(screenLine)
 
-    term.setCursorPos(2-scrollPos.x,screenLine)
-    local index=1
-    for i=1,#spans do
-      local len=#spans[i].text
-      local subStart,subEnd=1,len
-      if index>selEnd or index+len-1<selStart then
-        subStart,subEnd=len+1,len+1
-      else
-        if selStart>=index then
-          subStart=selStart-index+1
-        end
-        if selEnd<index+len-1 then
-          subEnd=len - (index+len-1 - selEnd)
-        end
-      end
-      if subStart>1 then
-        term.setTextColor(spans[i].color)
-        term.write(spans[i].text:sub(1,subStart-1))
-      end
-      if subStart~=len+1 then
-        term.setTextColor(term.isColor() and colors.white or colors.black)
-        term.setBackgroundColor(term.isColor() and colors.blue or colors.white)
-        term.write(spans[i].text:sub(subStart,subEnd))
-        term.setBackgroundColor(colors.black)
-      end
-      if subEnd<len then
-        term.setTextColor(spans[i].color)
-        term.write(spans[i].text:sub(subEnd+1))
-      end
-      index=index+len
-    end
-    if selEnd>#spans.rawText then
-      term.setBackgroundColor(term.isColor() and colors.blue or colors.white)
-      term.write(" ")
-      term.setBackgroundColor(colors.black)
-    end
-
-    local x,y=term.getCursorPos()
-    term.write((" "):rep(math.max(0,w-x+1)))
-  else
-    term.setCursorPos(1,screenLine)
-    term.write((" "):rep(w))
-  end
   if screenLine==h then
     if settings.advancedMenus then
       advancedMenu:draw()
     else
       mainMenu:draw()
     end
-    drawLineNum()
-  end
-end
-
-local function dirtyFrom(index)
-  for y=index,h do
-    dirtyLines[y]=true
-  end
-end
-
-local function redrawDirty()
-  if dirtyLines.all then
-    for i=1,h do
-      redrawLine(i)
-    end
-  else
-    for r,_ in pairs(dirtyLines) do
-       redrawLine(r)
-    end
-  end
-  dirtyLines={}
-end
-
-local function updateSelect(newBounds)
-  local startY,endY
-  if newBounds then
-    if selectBounds then
-      startY,endY=math.min(selectBounds[1].y,newBounds[1].y),math.max(selectBounds[2].y,newBounds[2].y)
-    else
-      startY,endY=newBounds[1].y,newBounds[2].y
-    end
-  elseif selectBounds then
-    blockSelecting=nil
-    blockStart=nil
-    startY,endY=selectBounds[1].y,selectBounds[2].y
-  else
-    blockSelecting=nil
-    blockStart=nil
-    return
-  end
-  selectBounds=newBounds
-  for i=startY-scrollPos.y+1,endY-scrollPos.y+1 do
-    if i>=1 and i<=viewRect.h then
-      redrawLine(i)
-    end
+    activeDoc:drawLineNum()
   end
 end
 
 
-local function cursorRow()
-  return lines[curPos.y+scrollPos.y-1]
-end
 
-local function trueCurPos()
-  local cx,cy=curPos.x,curPos.y
-  local row=cursorRow()
-  cx=math.min(cx,#row.rawText-scrollPos.x+2)
-  return cx,cy
-end
+
+
 
 
 local function curTextPos()
-  local lineNum=curPos.y+scrollPos.y-1
-  local index=math.min(curPos.x+scrollPos.x-1,#lines[lineNum].rawText+1)
-  return lineNum,index
+  local textPos=activeDoc:getTextPos()
+  return textPos.y,textPos.x
 end
 
 
@@ -367,289 +212,22 @@ local function doCursor()
   if settings.advancedMenus and advancedMenu.visible then
     term.setCursorPos(2,h)
   else
-    term.setCursorPos(trueCurPos())
+    term.setCursorPos(activeDoc:trueCurPos())
   end
   term.setTextColor(colors.white)
   term.setCursorBlink(true)
 end
 
 
-local function setScrollX(pos)
-  local lineNum,index=curTextPos()
-  local target=math.max(math.min(pos,#lines[lineNum].rawText-w+2),1)
-  if target~=scrollPos.x then
-    scrollPos.x=target
-    dirtyLines.all=true
-  end
-end
 
-local function setScrollY(pos,leaveCursor)
-  local lineNum,index=curTextPos()
-  local target=math.max(math.min(pos,#lines-viewRect.h+1),1)
-  if target~=scrollPos.y then
-    local offset=target-scrollPos.y
-    scrollPos.y=target
-    term.scroll(offset)
-    dirtyLines.all=true
-    if leaveCursor then
-      curPos.y=curPos.y-offset
-    end
-    return true
-  end
-end
-
-local function scrollY(offset,leaveCursor)
-  return setScrollY(scrollPos.y+offset,leaveCursor)
---[[  local didScroll=false
-  local target=math.max(math.min(scrollPos.y+offset,#lines-viewRect.h+1),1)
-  if target~=scrollPos.y then
-    didScroll=true
-    --correct if it was clamped
-    offset=target-scrollPos.y
-    term.scroll(offset)
-    scrollPos.y=target
-    for i=1,offset+1 do
-      redrawLine(viewRect.h-i+1)
-    end
-    for i=-1,offset,-1 do
-      redrawLine(-i)
-    end
-    dirtyLines[h]=true
-  end
-  return didScroll
-  --]]
-end
-
-local function setCursorPos(newX,newY)
-  newY=math.min(#lines,math.max(1,newY or (curPos.y+scrollPos.y-1)))
-  newX=math.max(1,newX)
-
-  local screenY=newY-scrollPos.y+1
-  if screenY>viewRect.h then
-    scrollY(screenY-viewRect.h)
-    screenY=viewRect.h
-  elseif screenY<1 then
-    scrollY(screenY-1)
-    screenY=1
-  end
-  curPos.y=screenY
-
-  local screenX=newX-scrollPos.x+1
-  if screenX>viewRect.w then
-    setScrollX(newX-viewRect.w+1)
-    screenX=viewRect.w
-  elseif screenX<1 then
-    setScrollX(scrollPos.x+screenX-1)
-    screenX=1
-  end
-  curPos.x=screenX
-
-  if blockSelecting then
-    local dragFrom=blockStart
-    local dragTo={x=newX, y=newY}
-    if dragTo.y<dragFrom.y or (dragTo.y==dragFrom.y and dragTo.x<dragFrom.x) then
-      newBounds={dragTo,dragFrom}
-    else
-      newBounds={dragFrom,dragTo}
-    end
-    updateSelect(newBounds)
-  else
-    updateSelect()
-  end
-  drawLineNum()
-  doCursor()
-end
 
 local function gotoLine(lineNum)
-  setCursorPos(1,lineNum)
-  --[[
-  local curY=lineNum-scrollPos.y+1
-  if curY<1 then
-    scrollY(lineNum-scrollPos.y)
-    curPos.y=1
-    redraw=true
-  elseif curY>viewRect.h then
-    scrollY(lineNum-viewRect.h+1 - scrollPos.y)
-    curPos.y=viewRect.h
-    redraw=true
-  else
-    curPos.y=lineNum-scrollPos.y+1
-  end
-
-  if curPos.x~=1 then
-    curPos.x=1
-    redraw=true
-  end
-  if redraw then
-    dirtyFrom(1)
-  end
---]]
+  activeDoc:setTextPos(1,lineNum)
 end
-
-
-local function moveCursor(x,y)
-  y=y or 0
-  setCursorPos(curPos.x+scrollPos.x-1+x,curPos.y+scrollPos.y-1+y)
-end
-
-local function cursorDown(amt)
-  moveCursor(0,amt or 1)
-end
-
-local function cursorUp(amt)
-  moveCursor(0,-(amt or 1))
-end
-
-
-local function updateLine(lineNum,newText,noProp,scream)
-  local prevLineState={}
-  newText=newText or lines[lineNum].rawText
-  if lineNum>1 then
-    prevLineState=lines[lineNum-1].state
-  end
-  local line=lines[lineNum]
-  local prevEndState=line.state
-  line=hilight.hilightToSpans(newText,prevLineState)
-  lines[lineNum]=line
-  dirtyLines[curPos.y]=true
-  --check for an end state change and flag to propagate
-  if not hilight.compareStates(line.state,prevEndState) then
-    local prevState=line.state
-    --for now just redoing whole file if needed, will make it incremental and/or deferred later
-    if not noProp then
-      if scream then error("Different! not noProp! Proping!") end
-      for i=lineNum+1,#lines do
-        prevEndState=lines[i].state
-        lines[i]=hilight.hilightToSpans(lines[i].rawText,prevState)
-        if i-scrollPos.y+1 <= viewRect.h then
-          redrawLine(i-scrollPos.y+1)
-        end
-        prevState=lines[i].state
-        --stop iterating if the state returns to expected
-        if hilight.compareStates(prevState,prevEndState) then
-          if scream then error("stopped prop at "..i) end
-          break
-        end
-      end
-    end
-  end
-end
-
-local function deleteSelection()
-  blockSelecting=false
-  if selectBounds then
-    local startY,endY=selectBounds[1].y,selectBounds[2].y
-    local selectBounds=selectBounds
-    curPos=textToCurPos(selectBounds[1])
-    updateSelect()
-    local prevEndState=lines[endY].state
-    if startY==endY then
-      local text=lines[startY].rawText
-      updateLine(startY,text:sub(1,selectBounds[1].x-1)..text:sub(selectBounds[2].x+1))
-    else
-      local newText=lines[startY].rawText:sub(1,selectBounds[1].x-1,noProp)..lines[endY].rawText:sub(selectBounds[2].x+1)
-      for i=startY+1,endY do
-        table.remove(lines,startY+1)
-      end
-      updateLine(startY,newText,false)
-      if not hilight.compareStates(lines[startY].state,prevEndState) then
-        updateLine(startY+1)
-      end
-      dirtyFrom(startY-scrollPos.y+2)
-    end
-  end
-end
-
-local function insertText(text)
-  if selectBounds then
-    deleteSelection()
-  end
-  --get the affected line and actual x position in line
-  local lineNum, index = curTextPos()
-  local line=lines[lineNum]
-  --insert our char!
-  local newText=line.rawText:sub(1,index-1)..text..line.rawText:sub(index)
-  updateLine(lineNum,newText)
-  moveCursor(#text,0)
-  if curPos.x-scrollPos.x+1>w then
-    setScrollX(curPos.x-w+1)
-  end
-  doCursor()
-end
-
-local function decreaseIndent()
-  if selectBounds then
-    for y=selectBounds[1].y,selectBounds[2].y do
-      local text=lines[y].rawText
-      local curCount=#text:match("^%s*")
-      local tab=curCount>0 and (curCount%2==0 and 2 or 1)
-      if tab then
-        if y==selectBounds[1].y then
-          selectBounds[1].x=selectBounds[1].x-tab
-        end
-        if y==selectBounds[2].y then
-          selectBounds[2].x=selectBounds[2].x-tab
-        end
-        updateLine(y,text:sub(1+tab))
-        if y==curPos.y+scrollPos.y-1 then
-          curPos.x=curPos.x-tab
-        end
-      end
-    end
-
-    dirtyFrom(selectBounds[1].y-scrollPos.y+1)
-  else
-    local lineNum,index=curTextPos()
-    local text=lines[lineNum].rawText
-    local curCount=#text:match("^%s*")
-    local tab=curCount>0 and (curCount%2==0 and 2 or 1)
-    if tab then
-      updateLine(lineNum,text:sub(1+tab))
-      moveCursor(-tab,0)
-    end
-  end
-end
-
-local function increaseIndent()
-  if selectBounds then
-    for y=selectBounds[1].y,selectBounds[2].y do
-      local curCount=#lines[y].rawText:match("^%s*")
-      local tab=curCount%2==0 and 2 or 1
-      updateLine(y,(" "):rep(tab)..lines[y].rawText)
-      if y==selectBounds[1].y then
-        selectBounds[1].x=selectBounds[1].x+tab
-      end
-      if y==selectBounds[2].y then
-        selectBounds[2].x=selectBounds[2].x+tab
-      end
-      if y==curPos.y+scrollPos.y-1 then
-        curPos.x=curPos.x+tab--moveCursor(tab,0)
-      end
-    end
-    dirtyFrom(selectBounds[1].y-scrollPos.y+1)
-  else
-    local lineNum,index=curTextPos()
-    local text=lines[lineNum].rawText
-    local curCount=#text:match("^%s*")
-    local tab=curCount%2==0 and 2 or 1
-    updateLine(lineNum,(" "):rep(tab)..text)
-    moveCursor(tab)
-  end
-end
-
 
 
 local function save()
-  file=io.open(filePath,"w")
-  if file then
-    for i=1,#lines do
-      if i~=1 then
-        file:write("\n")
-      end
-      file:write(lines[i].rawText)
-    end
-    file:close()
-  end
+  activeDoc:save()
 end
 
 local function load()
@@ -729,7 +307,7 @@ local function help()
     end
   end
 
-  dirtyLines.all=true
+  activeDoc:dirtyAll()
 end
 
 local charKeys={[57]=' ', [43]='\\', [83]='.', [2]='1', [3]='2', [4]='3', [5]='4', [6]='5', [7]='6', [8]='7', [9]='8', [10]='9', [11]='0', [12]='-', [13]='=', [51]=',', [52]='.', [53]='/', [181]='/', [55]='*', [26]='[', [27]=']', [71]='7', [72]='8', [73]='9', [74]='-', [75]='4', [76]='5', [77]='6', [78]='+', [79]='1', [80]='2', [81]='3', [39]=';', [40]='"', [41]='`', [82]='0', [30]='a', [48]='b', [46]='c', [32]='d', [18]='e', [33]='f', [34]='g', [35]='h', [23]='i', [36]='j', [37]='k', [38]='l', [50]='m', [49]='n', [24]='o', [25]='p', [16]='q', [19]='r', [31]='s', [20]='t', [22]='u', [47]='v', [17]='w', [45]='x', [21]='y', [44]='z', }
@@ -800,6 +378,7 @@ local function run()
   end
 
   local succ
+  local filePath=activeDoc:getFilePath()
   local func,err=loadfile(filePath)
   if not func then
     succ=false
@@ -826,69 +405,10 @@ local function run()
     end
   end
   term.clear()
-  dirtyFrom(1)
-  doCursor()
+  activeDoc:dirtyFrom(1)
 end
 
 
-local function copy()
-  blockSelecting=false
-  if selectBounds then
-    local startY,endY=selectBounds[1].y,selectBounds[2].y
-    local selectBounds=selectBounds
-    clipboard={}
-    if startY==endY then
-      clipboard[1]=lines[startY].rawText:sub(selectBounds[1].x,selectBounds[2].x)
-    else
-      clipboard[1]=lines[startY].rawText:sub(selectBounds[1].x)
-      for y=startY+1,endY-1 do
-        clipboard[#clipboard+1]=lines[y].rawText
-      end
-      clipboard[#clipboard+1]=lines[endY].rawText:sub(1,selectBounds[2].x)
-    end
-  end
-end
-
-local function cut()
-  copy()
-  deleteSelection()
-end
-
-local function paste()
-  if clipboard then
-    --delete selection, if any, as we'll replace
-    deleteSelection()
-    local lineNum,index=curTextPos()
-    --split this line at cursor
-    local before,after=lines[lineNum].rawText:sub(1,index-1),lines[lineNum].rawText:sub(index)
-    local newLines={}
-    --append first cb line to before for first line
-    newLines[1]=before..clipboard[1]
-    --rest will be new lines
-    for i=2,#clipboard do
-      newLines[i]=clipboard[i]
-    end
-    --append after to last
-    local newX=#newLines[#newLines]+1
-    newLines[#newLines]=newLines[#newLines]..after
-
-    --ok, update first line
-    --insert rest
-    local prevState=lines[lineNum].state
-    for i=2,#newLines do
-      table.insert(lines,lineNum+i-1,{state=hilight.copyState(prevState)})
-      updateLine(lineNum+i-1,newLines[i],i==#newLines,true)
-    end
-    updateLine(lineNum,newLines[1],false)
-    dirtyFrom(lineNum-scrollPos.y+1)
-    --new cursor pos will be in that last line
-    if #newLines>1 then
-      cursorDown(#newLines-1)
-    end
-    setCursorPos(newX,lineNum+#newLines-1)
-    blockSelecting=false
-  end
-end
 
 local commands = {
   ["save"] = {
@@ -905,31 +425,23 @@ local commands = {
     },
 
   ["increase indent"] = {
-      func=increaseIndent,
+      func=function() activeDoc:increaseIndent() end,
     },
   ["decrease indent"] = {
-      func=decreaseIndent,
+      func=function() activeDoc:decreaseIndent() end,
     },
   ["beginBlockSelect"] = {
-      func=function()
-        if blockSelecting then
-          blockSelecting=false
-        else
-          blockSelecting=true
-          blockStart=curToTextPos(curPos)
-          updateSelect({blockStart,blockStart})
-        end
-      end,
+      func=function() activeDoc:toggleBlockSelecting() end,
     },
 
   ["copy"] = {
-      func=copy,
+      func=function() activeDoc:copy() end,
     },
   ["cut"] = {
-      func=cut,
+      func=function() activeDoc:cut() end,
     },
   ["paste"] = {
-      func=paste,
+      func=function() activeDoc:paste() end,
     },
 
   ["toggleHideMenu"] = {
@@ -938,7 +450,7 @@ local commands = {
         (settings.advancedMenus and advancedMenu or mainMenu).alwaysVisible=not settings.hideMenus
         saveSettings()
         updateViewRect()
-        dirtyLines[h]=true
+        --NEEDED? dirtyLines[h]=true
       end,
     },
   ["toggleAdvancedMenu"] = {
@@ -955,7 +467,7 @@ local commands = {
 
 
         updateViewRect()
-        dirtyLines[h]=true
+        --NEEDED? dirtyLines[h]=true
      end,
    },
 
@@ -1199,13 +711,7 @@ local function hideMenu(menu,closeAll)
   if menu.visible then
     menu.selected=nil
     menu.dirty=true
-    if menu.horizontal then
-      dirtyLines[menu.y]=true
-    else
-      for y=1,#menu do
-        dirtyLines[y+menu.y-1]=true
-      end
-    end
+    activeDoc:dirtyFrom(menu.y)
     if menu.parent then
       menu.parent.childActive = false
       if closeAll then
@@ -1368,7 +874,7 @@ guiElements[#guiElements+1]=advancedMenu
 advancedMenu.id=#guiElements
 
 mainMenu=buildMenu(basicMenuDef)
-dirtyFrom(1)
+activeDoc:dirtyFrom(1)
 term.setCursorBlink(true)
 doCursor()
 
@@ -1384,13 +890,13 @@ if not settings.hideMenus then
 end
 
 while running do
-  redrawDirty()
+  activeDoc:redrawDirty()
   for i=1,#guiElements do
     if guiElements[i].dirty then
       guiElements[i]:draw()
     end
   end
-
+  activeDoc:drawLineNum()
   doCursor()
   local e={os.pullEvent()}
   local handled=false
@@ -1405,36 +911,17 @@ while running do
     if e[1]=="key" then
       local key=e[2]
       if key==keys.down then
-        cursorDown()
-        drawLineNum()
-        doCursor()
+        activeDoc:cursorDown()
       elseif key==keys.up then
-        cursorUp()
-        drawLineNum()
-        doCursor()
+        activeDoc:cursorUp()
       elseif key==keys.right then
-        local lineNum,index=curTextPos()
-        if curPos.x>index then
-          curPos.x=index
-        end
-        if curPos.x+scrollPos.x-1>#lines[lineNum].rawText and curPos.y+scrollPos.y-1<#lines then
-          setCursorPos(1,curPos.y+scrollPos.y)
-        else
-          moveCursor(1,0)
-        end
-        doCursor()
+        activeDoc:cursorRight()
       elseif key==keys.left then
-        local lineNum, index = curTextPos()
-        if index==1 and lineNum>1 then
-          setCursorPos(#lines[lineNum-1].rawText+1,lineNum-1)
-        else
-          setCursorPos(index-1,lineNum)
-        end
-        doCursor()
+        activeDoc:cursorLeft()
       elseif key==keys.pageDown then
-        moveCursor(0,viewRect.h)
+        activeDoc:moveCursor(0,viewRect.h)
       elseif key==keys.pageUp then
-        moveCursor(0,-viewRect.h)
+        activeDoc:moveCursor(0,-viewRect.h)
       elseif key==keys.leftCtrl then
         if settings.advancedMenus then
           advancedMenu:show()
@@ -1442,109 +929,43 @@ while running do
           mainMenu:show()
         end
       elseif key==keys.enter then
-        if selectBounds then
-          deleteSelection()
-        end
-        --carry on with the cr
-        local lineNum,index=curTextPos()
-        local curText=lines[lineNum].rawText
-        local pre,post=curText:sub(1,index-1),curText:sub(index)
-        dirtyFrom(curPos.y)
-        updateLine(lineNum,pre,true)
-        table.insert(lines,lineNum+1,{state={}})
-        updateLine(lineNum+1,post)
-        setCursorPos(1,lineNum+1)
+        activeDoc:insertNewline()
 
       elseif key==keys.backspace then
-        if selectBounds then
-          deleteSelection()
-        else
-          local lineNum,index=curTextPos()
-          if index==1 then
-            if lineNum>1 then
-              local prevLine=lines[lineNum-1]
-              local xp=#prevLine.rawText+1
-              local curLine=table.remove(lines,lineNum)
+        activeDoc:backspace()
 
-              updateLine(lineNum-1,prevLine.rawText..curLine.rawText)
-              setCursorPos(xp,lineNum-1)
-              dirtyFrom(curPos.y)
-            end
-          else
-            local curText=lines[lineNum].rawText
-            local newText=curText:sub(1,index-2)..curText:sub(index)
-            updateLine(lineNum,newText)
-            setCursorPos(index-1,lineNum)
-          end
-        end
-        doCursor()
       elseif key==keys.delete then
-        if selectBounds then
-          deleteSelection()
-        else
-          local lineNum,index=curTextPos()
-          local curText=lines[lineNum].rawText
-          if index==#curText+1 then
-            if lineNum<#lines then
-              local nextLine=table.remove(lines,lineNum+1)
-              updateLine(lineNum,curText..nextLine.rawText)
-              dirtyFrom(curPos.y)
-            end
-          else
-            local newText=curText:sub(1,index-1)..curText:sub(index+1)
-            updateLine(lineNum,newText)
-            curPos.x=index
-          end
-        end
-        doCursor()
+        activeDoc:delete()
+
       elseif key==keys.home then
-        setCursorPos(1)
+        activeDoc:setTextX(1)
       elseif key==keys["end"] then
-        setCursorPos(#cursorRow().rawText+1)
+        activeDoc:setTextX(activeDoc:getLineLen()+1)
       elseif key==keys.tab then
         if selectBounds then
-          increaseIndent()
+          activeDoc:increaseIndent()
         else
           --get the affected line and actual x position in line
-          local lineNum, index = curTextPos()
-          local line=lines[lineNum]
+          local textPos=activeDoc:getTextPos()
           --insert our char!
-          local left,right=line.rawText:sub(1,index-1),line.rawText:sub(index)
-          local tab=#left%2==0 and "  " or " "
-          insertText(tab)
+          local tab=textPos.x%2==0 and "  " or " "
+          activeDoc:insertText(tab)
         end
-        doCursor()
       end
     elseif e[1]=="char" then
       local char=e[2]
-      insertText(e[2])
+      activeDoc:insertText(e[2])
 
     elseif e[1]=="mouse_scroll" then
-      --if e[2]>0 then
-      --  cursorDown()
-      --else
-      --  cursorUp()
-      --end
-      --drawLineNum()
-      scrollY(e[2],true)
-      doCursor()
+      activeDoc:scrollY(e[2],true)
 
     elseif e[1]=="mouse_click" then
       if e[2]==1 then
         local x,y=math.min(math.max(e[3],1),w),math.min(math.max(e[4],1),h)
         if y<=viewRect.h then
-          if y+scrollPos.y-1 > #lines then
-            curPos.y=#lines
-            curPos.x=#lines[#lines].rawText+1
-          else
-            curPos.x=x
-            curPos.y=y
-          end
-          updateSelect()
-          drawLineNum()
-          doCursor()
+          activeDoc:setCurPos(x,y)
           lastClickPos={x=x,y=y}
-        elseif mainMenu.visible and not mainMenu.selected then
+        elseif not settings.advancedMenus and mainMenu.alwaysVisible and not mainMenu.selected then
           mainMenu:handleEvent(e)
         end
 
@@ -1554,22 +975,10 @@ while running do
 
       end
     elseif e[1]=="mouse_drag" then
-      if not blockStart then
-        blockStart = curToTextPos(lastClickPos)
-      end
-      local dragTo=curToTextPos({x=math.min(math.max(e[3],1),w),y=math.min(math.max(e[4],1),h)})
-      dragTo.x=math.min(dragTo.x,#lines[dragTo.y].rawText)
-      local newBounds
-      local dragFrom=blockStart
-      if dragTo.y<dragFrom.y or (dragTo.y==dragFrom.y and dragTo.x<dragFrom.x) then
-        newBounds={dragTo,dragFrom}
-      else
-        newBounds={dragFrom,dragTo}
-      end
-      updateSelect(newBounds)
+      activeDoc:dragSelect({x=math.min(math.max(e[3],1),viewRect.w),y=math.min(math.max(e[4],1),viewRect.h)})
     elseif e[1]=="term_resize" then
       updateViewRect()
-      dirtyFrom(1)
+      activeDoc:dirtyFrom(1)
       mainMenu:updatePos(1,h)
       advancedMenu.y=h
       doCursor()
