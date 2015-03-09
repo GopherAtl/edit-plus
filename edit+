@@ -4,6 +4,11 @@
 
 local programDir=shell.getRunningProgram():match("^(.-/?)[^/]+$")
 
+local settings = {
+  recentFiles = { },
+  syntaxStyle = "pastebin",
+}
+
 
 function grabFile(branch,name,load)
   write("downloading '"..name.."'...")
@@ -64,10 +69,6 @@ local function loadAPI(name, downloadIfMissing)
 end
 
 
-local settings = {
-  recentFiles = { },
-  syntaxStyle = "pastebin",
-}
 
 local settingsPath
 
