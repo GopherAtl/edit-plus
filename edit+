@@ -148,7 +148,7 @@ if args[1]=="--update" then
 
   local filelist
   do
-    local req=http.get("https://raw.githubusercontent.com/GopherAtl/edit-plus/"..branch.."/filelist")
+    local req=http.get("https://raw.githubusercontent.com/GopherAtl/edit-plus/"..branch.."/filelist.txt")
     filelist=req.readAll()
     req.close()
   end
