@@ -31,7 +31,9 @@ function grabFile(branch,name,load)
   file.write(text)
   file.close()
   print("success! "..#text.." bytes")
-  os.loadAPI(programDir..name)
+  if load then
+    os.loadAPI(programDir..name)
+  end
 end
 
 
@@ -144,10 +146,16 @@ if args[1]=="--update" then
   print("updating files...")
   local path=shell.dir().."/"
 
+  local filelist
+  do
+    local req=http.get("https://raw.githubusercontent.com/GopherAtl/edit-plus/"..branch.."/filelist")
+    filelist=req.readAll()
+    req.close()
+  end
 
-  grabFile(branch,"edit+")
-  grabFile(branch,"hilight")
-  grabFile(branch,"document")
+  for ftype,fname in filelist:gmatch("(%w+):([%w%+]+)") do
+    grabFile(branch,fname)
+  end
   --note this in the settings, we'll force-reload the APIs
   settings.freshUpdate=true
   settings.branch=branch
