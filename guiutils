@@ -1,0 +1,98 @@
+
+local function color(fg,bg)
+  term.setTextColor(fg)
+  term.setBackgroundColor(bg)
+end
+
+function padString(str,width,side)
+  side=side and side:lower() or "right"
+  if #str>width then
+    --trim instead
+    if side=="center" then
+      local trim=(#str-width)/2
+      str=str:sub(math.floor(trim)+1,#str-math.ceil(trim))
+    elseif side=="left" then
+      str=str:sub(#str-width+1)
+    else
+      str=str:sub(1,width)
+    end
+    return str
+  end
+
+  if side=="center" then
+    local pad=(width-#str)/2
+    str=(" "):rep(math.ceil(pad))..str..(" "):rep(math.floor(pad))
+  elseif side=="left" then
+    str=(" "):rep(width-#str)..str
+  else
+    str=str..(" "):rep(width-#str)
+  end
+  return str
+end
+
+function filePicker(dir, filename, ext, load, heading)
+  dir=dir or ""
+  filename=filename or ""
+  ext=ext or ""
+  local buttonText
+
+  if load then
+    if not heading then
+      heading="Open file..."
+    end
+    buttonText="Open"
+  else
+    if not heading then
+      heading="Save as..."
+    end
+    buttonText="Save"
+  end
+
+  local termW,termH=term.getSize()
+  local myW,myH=26,13
+  local myX,myY=math.floor((termW-myW)/2)+1, math.floor((termH-myH)/2)+1
+  color(colors.black,colors.white)
+
+  term.setCursorPos(myX,myY)
+  term.write("  "..padString(heading,myW-2))
+  term.setCursorPos(myX,myY+1)
+  term.write(" dir:"..padString(dir.."/",myW-5))
+  local list=fs.list(dir)
+  for i=1,10 do
+    term.setCursorPos(myX,myY+i+1)
+    term.write(" ")
+    term.setCursorPos(myX+myW-1,myY+i+1)
+    term.write(" ")
+    color(colors.white,colors.black)
+    term.setCursorPos(myX+1,myY+i+1)
+    term.write(" "..padString(list[i] or "",myW-4).." ")
+    color(colors.black,colors.white)
+  end
+  term.setCursorPos(myX,myY+11)
+  term.write(" file:")
+  term.setCursorPos(myX+myW-1,myY+11)
+  term.write(" ")
+  term.setCursorPos(myX,myY+12)
+  term.write(padString("cancel   "..buttonText.." ",myW,"left"))
+
+
+  color(colors.white,colors.black)
+  os.pullEvent()
+  print()
+  term.clear()
+end
+
+if shell then
+  print("Running from shell")
+  os.unloadAPI(guiutils)
+  os.loadAPI("guiutils")
+
+  if guiutils then
+    guiutils.filePicker()
+  else
+    print("not loaded?")
+  end
+else
+  print("loaded as api")
+end
+
