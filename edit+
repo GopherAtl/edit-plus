@@ -436,24 +436,6 @@ end
 
 local function scrollY(offset,leaveCursor)
   return setScrollY(scrollPos.y+offset,leaveCursor)
---[[  local didScroll=false
-  local target=math.max(math.min(scrollPos.y+offset,#lines-viewRect.h+1),1)
-  if target~=scrollPos.y then
-    didScroll=true
-    --correct if it was clamped
-    offset=target-scrollPos.y
-    term.scroll(offset)
-    scrollPos.y=target
-    for i=1,offset+1 do
-      redrawLine(viewRect.h-i+1)
-    end
-    for i=-1,offset,-1 do
-      redrawLine(-i)
-    end
-    dirtyLines[h]=true
-  end
-  return didScroll
-  --]]
 end
 
 local function setCursorPos(newX,newY)
@@ -498,28 +480,6 @@ end
 
 local function gotoLine(lineNum)
   setCursorPos(1,lineNum)
-  --[[
-  local curY=lineNum-scrollPos.y+1
-  if curY<1 then
-    scrollY(lineNum-scrollPos.y)
-    curPos.y=1
-    redraw=true
-  elseif curY>viewRect.h then
-    scrollY(lineNum-viewRect.h+1 - scrollPos.y)
-    curPos.y=viewRect.h
-    redraw=true
-  else
-    curPos.y=lineNum-scrollPos.y+1
-  end
-
-  if curPos.x~=1 then
-    curPos.x=1
-    redraw=true
-  end
-  if redraw then
-    dirtyFrom(1)
-  end
---]]
 end
 
 
@@ -1485,11 +1445,16 @@ while running do
         local lineNum,index=curTextPos()
         local curText=lines[lineNum].rawText
         local pre,post=curText:sub(1,index-1),curText:sub(index)
+        --check indent size of prior line
+        local indent=(" "):rep(#(pre:match("^%s+") or ""))
         dirtyFrom(curPos.y)
+        if pre:match("do%s*$") or pre:match("then%s*$") or pre:match("repeat%s*$") then
+          indent=indent.."  "
+        end
         updateLine(lineNum,pre,true)
         table.insert(lines,lineNum+1,{state={}})
-        updateLine(lineNum+1,post)
-        setCursorPos(1,lineNum+1)
+        updateLine(lineNum+1,indent..post)
+        setCursorPos(#indent+1,lineNum+1)
 
       elseif key==keys.backspace then
         if selectBounds then
