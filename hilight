@@ -130,7 +130,8 @@ function writeHilight(line, state, target)
                         if temp then
                           line=rest
                           str=str..temp
-                          if temp:sub(#temp)~="\\" then
+                          --count \s
+                          if #temp:match("\\*$")%2==0 then
                             break
                           end
                           str=str..strTok
