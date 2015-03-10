@@ -548,9 +548,21 @@ function class_document:insertText(text)
   local textPos= self:getTextPos()
   local line=priv.lines[textPos.y]
   --insert our char!
+  local cursorAdjust=#text
   local newText=line.rawText:sub(1,textPos.x-1)..text..line.rawText:sub(textPos.x)
+  if textPos.y>1 and (newText:match("^%s*end%s*$") or newText:match("^%s*elseif.*$") or newText:match("^%s*else%s*$") or newText:match("^%s*until.*$")) then
+    --is the previous line indented the same as this line?
+    local thisIndent=newText:match("^%s*")
+    local prevIndent=priv.lines[textPos.y-1].rawText:match("^%s*")
+    if #thisIndent>0 and #thisIndent==#prevIndent then
+      --reduce the indent on this line
+      newText=newText:sub(3)
+      cursorAdjust=cursorAdjust-2
+    end
+  end
+
   self:updateLine(textPos.y,newText)
-  self:moveCursor(#text,0)
+  self:moveCursor(cursorAdjust,0)
   if priv.curPos.x-priv.scrollPos.x+1>priv.viewRect.w then
     self:setScrollX(priv.curPos.x-priv.viewRect.w+1)
   end
@@ -876,10 +888,15 @@ function class_document:insertNewline()
   local curText=lines[textPos.y].rawText
   local pre,post=curText:sub(1,textPos.x-1),curText:sub(textPos.x)
   self:dirtyFrom(priv.curPos.y)
+
+  local indent=(" "):rep(#(pre:match("^%s+") or ""))
+  if pre:match("do%s*$") or pre:match("then%s*$") or pre:match("repeat%s*$") or pre:match("else%s*") then
+    indent=indent.."  "
+  end
   self:updateLine(textPos.y,pre,true)
   table.insert(lines,textPos.y+1,{state={}})
-  self:updateLine(textPos.y+1,post)
-  self:setCurPos(1,textPos.y+1)
+  self:updateLine(textPos.y+1,indent..post)
+  self:setCurPos(#indent+1,textPos.y+1)
 end
 
 --[[------------------
