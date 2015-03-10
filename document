@@ -135,8 +135,6 @@ function class_document:setTextPos(newX,newY)
   else
     self:updateSelect()
   end
-
-  self:drawLineNum()
 end
 
 
@@ -232,24 +230,6 @@ end
   Methods
 ]]
 
---[[------------------
-  drawLineNum
-  draws the current cursor position's line number on the bottom-right corner
-]]
-
-function class_document:drawLineNum()
-  local priv=privates[self]
-  local scrollPos=priv.scrollPos
-  local curPos=priv.curPos
-
-  lineNum=" "..tostring(scrollPos.y+curPos.y-1).." "
-  term.setCursorPos(priv.viewRect.w-#lineNum+1,priv.viewRect.h)
-  term.setBackgroundColor(colors.white)
-  term.setTextColor(colors.black)
-  term.write(lineNum)
-  term.setBackgroundColor(colors.black)
-  term.setTextColor(colors.white)
-end
 
 --[[------------------
   updateViewRect
@@ -261,7 +241,7 @@ function class_document:updateViewRect(viewRect)
   local dirtyLines=priv.dirtyLines
 
   for y=priv.viewRect.h+1,viewRect.h do
-    dirtyLines[i]=true
+    dirtyLines[y]=true
   end
   priv.viewRect=viewRect
 end

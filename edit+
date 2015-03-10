@@ -195,7 +195,7 @@ local lastClickPos={x=1,y=1}
 local clipboard
 
 local viewRect
-local mainMenu, advancedMenu, contextMenu
+local mainMenu, advancedMenu, contextMenu, activeMenu
 
 local guiElements = {}
 local activeGuiElement=0
@@ -221,16 +221,21 @@ local function redrawLine(screenLine)
   activeDoc:redrawLine(screenLine)
 
   if screenLine==h then
-    if settings.advancedMenus then
-      advancedMenu:draw()
-    else
-      mainMenu:draw()
-    end
-    activeDoc:drawLineNum()
+    activeMenu:draw()
   end
 end
 
 
+local function drawLineNum()
+
+  local lineNum=" "..activeDoc:getTextY().." "
+  term.setCursorPos(viewRect.w-#lineNum+1,h)
+  term.setBackgroundColor(colors.white)
+  term.setTextColor(colors.black)
+  term.write(lineNum)
+  term.setBackgroundColor(colors.black)
+  term.setTextColor(colors.white)
+end
 
 
 
@@ -444,6 +449,7 @@ end
 
 
 
+
 local commands = {
   ["save"] = {
       func=save,
@@ -481,7 +487,7 @@ local commands = {
   ["toggleHideMenu"] = {
       func=function()
         settings.hideMenus=not settings.hideMenus;
-        (settings.advancedMenus and advancedMenu or mainMenu).alwaysVisible=not settings.hideMenus
+        activeMenu.alwaysVisible=not settings.hideMenus
         saveSettings()
         updateViewRect()
         --NEEDED? dirtyLines[h]=true
@@ -494,11 +500,13 @@ local commands = {
         if settings.advancedMenus then
           advancedMenu.alwaysVisible=not settings.hideMenus
           mainMenu.alwaysVisible=false
+          activeMenu=advancedMenu
         else
           mainMenu.alwaysVisible=not settings.hideMenus
           advancedMenu.alwaysVisible=false
+          activeMenu=mainMenu
         end
-
+        activeMenu.dirty=true
 
         updateViewRect()
         --NEEDED? dirtyLines[h]=true
@@ -630,6 +638,7 @@ drawMenu =function(menu)
         offset=offset+menu[i].width
       end
       menu.lastX=offset
+      term.write((" "):rep(w-offset))
     else
       if menu.y+#menu > h then
         menu.y=h - #menu+1
@@ -754,7 +763,6 @@ local function hideMenu(menu,closeAll)
     end
     menu.visible=false
   end
-  doCursor()
 end
 
 local function doThing(menu,thing)
@@ -871,9 +879,9 @@ end
 
 advancedMenu={
   draw=function(menu)
+      term.setCursorPos(1,h)
+      term.setTextColor(colors.white)
       if menu.visible then
-        term.setCursorPos(1,h)
-        term.setTextColor(colors.white)
         term.write("> ")
         for k,v in pairs(hotkeys) do
           if type(k)=="string" then
@@ -882,8 +890,11 @@ advancedMenu={
         end
         term.write("                                             ")
         term.setCursorPos(2,h)
+      else
+        term.write((" "):rep(w))
       end
       menu.dirty=false
+
     end,
   handleEvent=function(menu,e)
       if e[1]=="key" or e[1]=="char" then
@@ -910,27 +921,27 @@ advancedMenu.id=#guiElements
 mainMenu=buildMenu(basicMenuDef)
 activeDoc:dirtyFrom(1)
 term.setCursorBlink(true)
-doCursor()
+
+if settings.advancedMenus then
+  activeMenu=advancedMenu
+else
+  activeMenu=mainMenu
+end
 
 if not settings.hideMenus then
-  if settings.advancedMenus then
-    advancedMenu.alwaysVisible=true
-    advancedMenu.dirty=true
-  else
-    mainMenu.alwaysVisible=true
-    --mainMenu.visible=true
-    mainMenu.dirty=true
-  end
+  activeMenu.alwaysVisible=true
+  activeMenu.dirty=true
 end
 
 while running do
   activeDoc:redrawDirty()
+  activeMenu.dirty=true
   for i=1,#guiElements do
     if guiElements[i].dirty then
       guiElements[i]:draw()
     end
   end
-  activeDoc:drawLineNum()
+  drawLineNum()
   doCursor()
   local e={os.pullEvent()}
   local handled=false
@@ -957,11 +968,7 @@ while running do
       elseif key==keys.pageUp then
         activeDoc:moveCursor(0,-viewRect.h)
       elseif key==keys.leftCtrl then
-        if settings.advancedMenus then
-          advancedMenu:show()
-        else
-          mainMenu:show()
-        end
+        activeMenu:show()
       elseif key==keys.enter then
         activeDoc:insertNewline()
 
@@ -1000,7 +1007,9 @@ while running do
           activeDoc:setCurPos(x,y)
           lastClickPos={x=x,y=y}
         elseif not settings.advancedMenus and mainMenu.alwaysVisible and not mainMenu.selected then
-          mainMenu:handleEvent(e)
+          if mainMenu:handleEvent(e) then
+            mainMenu.visible=true
+          end
         end
 
       elseif e[2]==2 then
@@ -1015,7 +1024,6 @@ while running do
       activeDoc:dirtyFrom(1)
       mainMenu:updatePos(1,h)
       advancedMenu.y=h
-      doCursor()
     end
   end
 end
