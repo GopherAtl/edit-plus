@@ -1,5 +1,8 @@
+local selectedTextColor, selectedBGColor=colors.black,colors.white
+local defaultTextColor, defaultBGColor=colors.white,colors.black
 
-local function color(fg,bg)
+
+local function setColors(fg,bg)
   term.setTextColor(fg)
   term.setBackgroundColor(bg)
 end
@@ -30,9 +33,457 @@ function padString(str,width,side)
   return str
 end
 
+
+
+--base gui zone
+do
+  local class_guielement = { }
+  local class_guielement_meta = { __index=class_guielement }
+
+  function class_guielement:isDirty()
+    return self.dirty
+  end
+
+  function class_guielement:handleEvent(e)
+  end
+
+  function class_guielement:giveFocus()
+    if self.canTakeFocus then
+      self.hasFocus=true
+      self.dirty=true
+      return true
+    end
+  end
+
+  function class_guielement:loseFocus()
+    if self.hasFocus then
+      self.hasFocus=false
+      self.dirty=true
+    end
+  end
+
+  function class_guielement:doCursor()
+    term.setCursorBlink(false)
+  end
+
+  function subclassGuiElement(class)
+    if class~=class_guimetatable then
+      setmetatable(class,class_guielement_meta)
+    end
+  end
+
+end
+
+--label zone
+do
+  local class_label = { }
+  local class_label_meta = { __index=class_label }
+  subclassGuiElement(class_label)
+
+  function class_label:draw()
+    if self.colorInvert then
+      setColors(colors.black,colors.white)
+    else
+      setColors(colors.white,colors.black)
+    end
+    term.setCursorPos(self.x,self.y)
+    term.write(padString(self.text,self.width,self.textAlign))
+    self.dirty=false
+  end
+
+
+  function newLabel(x,y,w,text,textAlign,invertColors)
+    if type(textAlign)=="string" then
+      textAlign=textAlign:lower()
+    end
+    if textAlign~="left" and textAlign~="right" and textAlign~="center" then
+      textAlign="left"
+    end
+    local label={
+        x=x,
+        y=y,
+        width=w,
+        height=1,
+        colorInvert=invertColors,
+        text=text or "label",
+        dirty=true,
+        textAlign=textAlign
+      }
+    setmetatable(label,class_label_meta)
+    return label
+  end
+end
+
+--button zone
+do
+  local class_button = { }
+  local class_button_meta = { __index=class_button }
+  subclassGuiElement(class_button)
+
+  function class_button:draw()
+    term.setCursorPos(self.x,self.y)
+    if self.hasFocus==self.colorInvert then
+      setColors(colors.white,colors.black)
+      term.write("["..padString(self.text,self.width-2,"center").."]")
+    else
+      setColors(colors.black,colors.white)
+      term.write(" "..padString(self.text,self.width-2,"center").." ")
+    end
+  end
+
+  function class_button:doCursor()
+    if self.colorInvert then
+      setColors(colors.white,colors.black)
+    else
+      setColors(colors.black,colors.white)
+    end
+    term.setCursorPos(self.x+1,self.y)
+    term.setCursorBlink(true)
+  end
+
+  function class_button:handleEvent(e)
+    if e[1]=="key" then
+      if e[2]==keys.enter then
+        if type(self.onClick)=="function" then
+          self.onClick(e[2],e[3],e[4])
+        end
+        handled=true
+      end
+    end
+  end
+
+  function newButton(x,y,w,text,invertColors)
+    local button={
+        x=x,
+        y=y,
+        width=w,
+        height=1,
+        colorInvert=invertColors,
+        text=text or "button",
+        dirty=true,
+        canTakeFocus=true,
+      }
+    setmetatable(button,class_button_meta)
+    return button
+  end
+end
+
+--text field zone
+--dialog zone
+do
+  local class_textfield = { }
+  local class_textfield_meta = { __index=class_textfield }
+  subclassGuiElement(class_textfield)
+
+  function class_textfield:draw()
+    term.setCursorPos(self.x,self.y)
+    setColors(colors.white,colors.black)
+    local visStr=self.text:sub(self.scrollPos)
+
+    if self.hasFocus then
+      term.write("["..padString(visStr,self.width-2).."]")
+    else
+      term.write(" "..padString(visStr,self.width-2).." ")
+    end
+  end
+
+  function class_textfield:doCursor()
+    setColors(colors.white,colors.black)
+    term.setCursorPos(self.x+self.cursorPos-self.scrollPos+1,self.y)
+    term.setCursorBlink(true)
+  end
+
+  function class_textfield:handleEvent(e)
+    local handled=false
+    local prevCurPos=self.cursorPos
+    if e[1]=="key" then
+      if e[2]==keys.left then
+        self.cursorPos=math.max(1,self.cursorPos-1)
+        handled=true
+      elseif e[2]==keys.right then
+        self.cursorPos=math.min(#self.text+1,self.cursorPos+1)
+        handled=true
+      elseif e[2]==keys.home then
+        self.cursorPos=1
+        handled=true
+      elseif e[2]==keys["end"] then
+        self.cursorPos=#self.text+1
+        handled=true
+      elseif e[2]==keys.backspace then
+        self.text=self.text:sub(1,self.cursorPos-2)..self.text:sub(self.cursorPos)
+        self.cursorPos=math.max(1,self.cursorPos-1)
+        self.dirty=true
+        handled=true
+      elseif e[2]==keys.delete then
+        label=label:sub(1,self.cursorPos-1)..label:sub(self.cursorPos+1)
+        self.dirty=true
+        handled=true
+      end
+    elseif e[1]=="char" then
+      --insert to text
+      self.text=self.text:sub(1,self.cursorPos-1)..e[2]..self.text:sub(self.cursorPos)
+      self.cursorPos=self.cursorPos+1
+      self.dirty=true
+
+      handled=true
+    elseif e[1]=="mouse_click" and e[2]==1 then
+      self.cursorPos=e[3]-self.x+self.scrollPos-1
+      handled=true
+    elseif e[1]=="mouse_scroll" then
+      self.cursorPos=self.cursorPos+e[2]
+      handled=true
+    end
+
+    if prevCurPos~=self.cursorPos then
+      if self.cursorPos<self.scrollPos then
+        self.scrollPos=self.cursorPos
+        self.dirty=true
+      elseif self.cursorPos>self.scrollPos+self.width-1 then
+        self.scrollPos=self.cursorPos-self.width+1
+        self.dirty=true
+      end
+    end
+
+    return handled
+  end
+
+  function class_textfield:setText(text)
+    self.text=text
+    self.cursorPos=#text+1
+    self.scrollPos=math.max(1,#text-self.width)
+    self.dirty=true
+  end
+
+  function newTextField(x,y,w)
+    local field={
+        x=x,
+        y=y,
+        width=w,
+        height=1,
+        text="",
+        dirty=true,
+        canTakeFocus=true,
+        cursorPos=1,
+        scrollPos=1,
+      }
+
+    setmetatable(field,class_textfield_meta)
+    return field
+  end
+
+end
+
+--dialog zone
+do
+  local class_dialog = { }
+  local class_dialog_meta = { __index=class_dialog }
+  subclassGuiElement(class_dialog)
+
+  function class_dialog:draw()
+    for i=1,#self.children do
+      if self.children[i].dirty then
+        self.children[i]:draw()
+      end
+    end
+    self.dirty=false
+  end
+
+  function class_dialog:isDirty()
+    if self.dirty then
+      return true
+    end
+    for i=1,#self.children do
+      if self.children[i].dirty then
+        return true
+      end
+    end
+  end
+
+
+  function class_dialog:doCursor()
+    if self.hasFocus and self.focusChild then
+      self.children[self.focusChild]:doCursor()
+    else
+      term.setCursorBlink(false)
+    end
+  end
+
+  function class_dialog:handleEvent(event)
+    local handled=false
+    if event[1]:sub(1,6)=="mouse_" then
+      local mx,my=event[3],event[4]
+      for i=1,#self.children do
+        local child=self.children[i]
+        if mx>=child.x and mx<child.x+child.width and
+           my>=child.y and my<child.y+child.height then
+          if self.focusChild~=i and child.canTakeFocus then
+            self.children[self.focusChild]:loseFocus()
+            self.focusChild=i
+            child:giveFocus()
+          end
+          if child:handleEvent(event) then
+            handled=true
+            break
+          end
+        end
+      end
+    elseif event[1]=="key" or event[1]=="char" then
+      if event[2]==keys.leftCtrl then
+        --focus to my menu?
+        --handled=true
+      elseif event[2]==keys.tab then
+        --give focused child a chance
+        if self.focusChild then
+          handled=self.children[self.focusChild]:handleEvent(event)
+        end
+        if not handled and self.focusChild then
+          self.children[self.focusChild]:loseFocus()
+          repeat
+            self.focusChild=self.focusChild%#self.children+1
+          until self.children[self.focusChild]:giveFocus()
+          handled=true
+        end
+      elseif self.focusChild then
+        handled=self.children[self.focusChild]:handleEvent(event)
+      end
+    end
+    return handled
+  end
+
+  function class_dialog:addElement(child)
+    self.children[#self.children+1]=child
+    if self.focusChild==nil and child.canTakeFocus then
+      self.focusChild=#self.children
+      child.parent=self
+    end
+  end
+
+  function class_dialog:giveFocus()
+    self.hasFocus=true
+    self.dirty=true
+    if self.focusChild==nil then
+      self.focusChild=0
+      repeat
+        self.focusChild=self.focusChild+1
+      until self.focusChild>#self.children or self.children[self.focusChild]:giveFocus()
+      if self.focusChild>#self.children then
+        self.focusChild=nil
+      end
+    end
+  end
+
+  function newDialog(x,y,w,h)
+    local dialog={
+        x=x,
+        y=y,
+        width=w,
+        height=h,
+        dirty=true,
+        scrollPos=1,
+        canTakeFocus=true,
+        children={},
+    }
+
+    setmetatable(dialog,class_dialog_meta)
+    return dialog
+  end
+
+end
+
+--list box zone
+do
+  local class_listbox = { }
+  local class_listbox_meta = { __index=class_listbox}
+  subclassGuiElement(class_listbox)
+
+  function class_listbox:draw()
+    local list=self.list
+    for i=1,self.height do
+      local index=i+self.scrollPos-1
+      local pad,tail=" "," "
+      if index==self.selected then
+        pad=">"
+        tail="<"
+      end
+      setColors(defaultTextColor,defaultBGColor)
+      term.setCursorPos(self.x,self.y+i-1)
+      term.write(padString(pad..(list[index] or "")..tail,self.width))
+    end
+    self.dirty=false
+  end
+
+  function class_listbox:doCursor()
+    if self.selected then
+      local item=self.list[self.selected]
+      setColors(colors.white,colors.black)
+      term.setCursorPos(self.x,self.y+self.selected-self.scrollPos)
+      term.setCursorBlink(true)
+    else
+      term.setCursorBlink(false)
+    end
+  end
+
+  function class_listbox:handleEvent(event)
+    local handled=false
+    local prevSel=self.selected
+    if event[1]=="key" then
+      if event[2]==keys.down then
+        handled=true
+        if not self.selected then
+          self.selected=1
+        else
+          self.selected=math.min(#self.list,self.selected+1)
+        end
+      elseif event[2]==keys.up then
+        handled=true
+        if not self.selected then
+          self.selected=1
+        else
+          self.selected=math.max(1,self.selected-1)
+        end
+      end
+    elseif event[1]=="mouse_scroll" then
+      self.scrollPos=math.max(1,math.min(#self.list-self.height+1,self.scrollPos+event[2]))
+      self.dirty=true
+    elseif event[1]=="mouse_click" then
+      local clickIndex=event[4]-self.y+self.scrollPos
+      if clickIndex<#self.list then
+        self.selected=clickIndex
+      end
+    end
+    if self.selected~=prevSel then
+      self.dirty=true
+      if self.selected<self.scrollPos then
+        self.scrollPos=self.selected
+      elseif self.selected>self.scrollPos+self.height-1 then
+        self.scrollPos=self.selected-self.height+1
+      end
+    end
+    return handled
+  end
+
+  function newListbox(x,y,w,h,list)
+    local listbox={
+        x=x,
+        y=y,
+        width=w,
+        height=h,
+        list=list,
+        selected=nil,
+        dirty=true,
+        scrollPos=1,
+        canTakeFocus=true,
+    }
+    setmetatable(listbox,class_listbox_meta)
+    return listbox
+  end
+end
+
+
+
 function filePicker(dir, filename, ext, load, heading)
   dir=dir or ""
-  filename=filename or ""
+  filename=filename or "untitled"
   ext=ext or ""
   local buttonText
 
@@ -51,33 +502,57 @@ function filePicker(dir, filename, ext, load, heading)
   local termW,termH=term.getSize()
   local myW,myH=26,13
   local myX,myY=math.floor((termW-myW)/2)+1, math.floor((termH-myH)/2)+1
-  color(colors.black,colors.white)
+  setColors(colors.black,colors.white)
 
-  term.setCursorPos(myX,myY)
-  term.write("  "..padString(heading,myW-2))
-  term.setCursorPos(myX,myY+1)
-  term.write(" dir:"..padString(dir.."/",myW-5))
-  local list=fs.list(dir)
-  for i=1,10 do
+
+  for i=1,9 do
     term.setCursorPos(myX,myY+i+1)
     term.write(" ")
     term.setCursorPos(myX+myW-1,myY+i+1)
     term.write(" ")
-    color(colors.white,colors.black)
-    term.setCursorPos(myX+1,myY+i+1)
-    term.write(" "..padString(list[i] or "",myW-4).." ")
-    color(colors.black,colors.white)
   end
-  term.setCursorPos(myX,myY+11)
-  term.write(" file:")
   term.setCursorPos(myX+myW-1,myY+11)
   term.write(" ")
+
   term.setCursorPos(myX,myY+12)
-  term.write(padString("cancel   "..buttonText.." ",myW,"left"))
+  term.write((" "):rep(myW))
 
+  local list=fs.list(dir)
+  local dialog=newDialog(myX,myY,myW,myH)
+  local fileList=newListbox(myX+1,myY+2,myW-2,9,list)
+  local okButton=newButton(myX+myW-7, myY+myH-1, 6, buttonText, true)
+  local cancelButton=newButton(myX+myW-16, myY+myH-1, 8, "cancel", true)
 
-  color(colors.white,colors.black)
-  os.pullEvent()
+  local titleLabel=newLabel(myX,myY,myW," "..heading,"right",true)
+  local dirLabel=newLabel(myX,myY+1,myW," dir:"..dir.."/","right",true)
+  local fileLabel=newLabel(myX,myY+11,6," file:","right",true)
+  local fileField=newTextField(myX+7,myY+11,myW-8)
+  fileField:setText(filename)
+
+  dialog:addElement(titleLabel)
+  dialog:addElement(dirLabel)
+  dialog:addElement(fileLabel)
+
+  dialog:addElement(fileList)
+  dialog:addElement(fileField)
+  dialog:addElement(cancelButton)
+  dialog:addElement(okButton)
+
+  dialog:giveFocus()
+
+  setColors(colors.white,colors.black)
+  while true do
+    if dialog:isDirty() then
+      dialog:draw()
+    end
+    dialog:doCursor()
+    local e={os.pullEvent()}
+    dialog:handleEvent(e)
+    if e[1]=="key" and e[2]==keys.leftCtrl then
+      break
+    end
+  end
+  setColors(colors.white,colors.black)
   print()
   term.clear()
 end
@@ -86,6 +561,9 @@ if shell then
   print("Running from shell")
   os.unloadAPI(guiutils)
   os.loadAPI("guiutils")
+
+  setColors(colors.white,colors.black)
+  term.clear()
 
   if guiutils then
     guiutils.filePicker()
