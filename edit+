@@ -564,9 +564,21 @@ local function insertText(text)
   local lineNum, index = curTextPos()
   local line=lines[lineNum]
   --insert our char!
+  local cursorAdjust=#text
   local newText=line.rawText:sub(1,index-1)..text..line.rawText:sub(index)
+  if lineNum>1 and (newText:match("^%s*end%s*$") or newText:match("^%s*elseif.*$") or newText:match("^%s*else%s*$") or newText:match("^%s*until.*$")) then
+    --is the previous line indented the same as this line?
+    local thisIndent=newText:match("^%s*")
+    local prevIndent=lines[lineNum-1].rawText:match("^%s*")
+    if #thisIndent>0 and #thisIndent==#prevIndent then
+      --reduce the indent on this line
+      newText=newText:sub(3)
+      cursorAdjust=cursorAdjust-2
+    end
+  end
+
   updateLine(lineNum,newText)
-  moveCursor(#text,0)
+  moveCursor(cursorAdjust,0)
   if curPos.x-scrollPos.x+1>w then
     setScrollX(curPos.x-w+1)
   end
@@ -1448,7 +1460,7 @@ while running do
         --check indent size of prior line
         local indent=(" "):rep(#(pre:match("^%s+") or ""))
         dirtyFrom(curPos.y)
-        if pre:match("do%s*$") or pre:match("then%s*$") or pre:match("repeat%s*$") then
+        if pre:match("do%s*$") or pre:match("then%s*$") or pre:match("repeat%s*$") or pre:match("else%s*") then
           indent=indent.."  "
         end
         updateLine(lineNum,pre,true)
