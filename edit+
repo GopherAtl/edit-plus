@@ -287,6 +287,19 @@ local function new()
   --will facilitate saveAs also.
 end
 
+local function exitEditor()
+  if activeDoc:hasUnsavedChanges() then
+    local choice=guiutils.messageBox("Save changes?","You have unsaved changes.",26,{"Save","Discard","Cancel"})
+    if choice==1 then
+      if not activeDoc:save() then
+        return
+      end
+    elseif choice==3 then
+      return
+    end
+  end
+  running=false
+end
    local helpPages={[[
 Basic Menu:
 
@@ -471,7 +484,7 @@ local commands = {
       func=run,
     },
   ["exit"] = {
-      func=function() running=false end,
+      func=exitEditor
     },
 
   ["increase indent"] = {

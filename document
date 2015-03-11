@@ -226,6 +226,10 @@ function class_document:setScrollY(newY,leaveCursor)
   end
 end
 
+function class_document:hasUnsavedChanges()
+  return privates[self].fileChanged
+end
+
 --[[============================
   Methods
 ]]
@@ -465,6 +469,7 @@ function class_document:updateLine(lineNum,newText,noProp)
       end
     end
   end
+  priv.fileChanged=true
 end
 
 --[[------------------
@@ -512,6 +517,7 @@ function class_document:deleteSelection()
       self:dirtyFrom(startY-priv.scrollPos.y+2)
     end
   end
+  priv.fileChanged=true
 end
 
 --[[------------------
@@ -546,6 +552,7 @@ function class_document:insertText(text)
   if priv.curPos.x-priv.scrollPos.x+1>priv.viewRect.w then
     self:setScrollX(priv.curPos.x-priv.viewRect.w+1)
   end
+  priv.fileChanged=true
 end
 
 --[[------------------
@@ -647,12 +654,23 @@ function class_document:saveAs()
     priv.fileDir=dir
     priv.fileName=name
     --now do the actual save
-    self:save()
+    return self:save()
   end
+  return false
 end
 
 function class_document:load(filePath)
   local priv=privates[self]
+
+  --is a file loaded now, with unsaved changes?
+  if (#priv.lines>0 or priv.fileName) and priv.fileChanged then
+    if guiutils.messageBox("Discard?","You have unsaved changes; do you want to save them first?",20,{"Save","Discard"}) then
+      if not self:save() then
+        return --hard cancel
+      end
+    end
+  end
+
   local dir,name
   if not filePath then
     dir,name=guiutils.filePicker(priv.fileDir)
@@ -687,6 +705,7 @@ function class_document:load(filePath)
     priv.scrollPos={x=1,y=1}
     priv.textPos={x=1,y=1}
     priv.dirtyLines.all=true
+    priv.fileChanged = nil
   end
 end
 
@@ -695,7 +714,7 @@ function class_document:save()
   local priv=privates[self]
   local filePath=priv.fileDir..priv.fileName
   local lines=priv.lines
-
+  local success=false
   local file=io.open(filePath,"w")
   if file then
     for i=1,#lines do
@@ -705,14 +724,16 @@ function class_document:save()
       file:write(priv.lines[i].rawText)
     end
     file:close()
+    success=true
   else
     if fs.isReadOnly(priv.fileDir..priv.fileName) then
       --just do a saveAs if they try to save a read-only file
-      self:saveAs()
+      success=self:saveAs()
     else
       guiutils.messageBox("Error!","Unknown error saving file!",20)
     end
   end
+  return success
 end
 
 
@@ -959,6 +980,7 @@ function class_document:backspace()
     self:deleteSelection()
   else
     local textPos=priv.textPos
+    textPos.x=math.min(#priv.lines[textPos.y]+1,textPos.x)
     local lines=priv.lines
     if textPos.x==1 then
       if textPos.y>1 then
@@ -1045,5 +1067,6 @@ function new(filePath)
   privates[newDoc]=newPriv
 
   newDoc:load(filePath)
+
   return newDoc
 end

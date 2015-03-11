@@ -743,6 +743,7 @@ function messageBox(title,text,width,buttonLabels)
   end
 
   dialog:runModal()
+  setColors(colors.white,colors.black)
   return choice
 end
 
@@ -869,7 +870,7 @@ function filePicker(dir, filename, ext, save, heading)
   dialog:giveFocus()
 
   dialog:runModal()
-
+  setColors(colors.white,colors.black)
   return unpack(result or {})
 end
 
