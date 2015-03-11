@@ -60,7 +60,7 @@ function assignClipboard(newClipboard)
     clipboard=newClipboard
     return true
   end
-  --error - incompatible clipboard object specified
+  guiutils.messageBox("Error!","Unrecognized data in clipboard!")
 end
 
 --[[############################
@@ -639,10 +639,62 @@ end
 --[[------------------
 ]]
 
+function class_document:saveAs()
+  local priv=privates[self]
+
+  local dir,name=guiutils.filePicker(priv.fileDir,priv.fileName or "untitled",nil,true)
+  if dir then
+    priv.fileDir=dir
+    priv.fileName=name
+    --now do the actual save
+    self:save()
+  end
+end
+
+function class_document:load(filePath)
+  local priv=privates[self]
+  local dir,name
+  if not filePath then
+    dir,name=guiutils.filePicker(priv.fileDir)
+    if dir then
+      filePath=dir..name
+    end
+  else
+    dir,name = filePath:match("^(.-/?)([^/]+)$")
+  end
+
+  if dir then
+    priv.fileDir=dir
+    priv.fileName=name
+
+    local lines={}
+    do
+      local prevState={}
+      local file=io.open(filePath,"r")
+      if file~=nil then
+        for line in file:lines() do
+          lines[#lines+1]=hilight.hilightToSpans(line,prevState)
+          prevState=lines[#lines].state
+        end
+        file:close()
+      end
+      if #lines==0 then
+        lines[1]={rawText="",state={}}
+      end
+    end
+    priv.lines=lines
+    priv.curPos={x=1,y=1}
+    priv.scrollPos={x=1,y=1}
+    priv.textPos={x=1,y=1}
+    priv.dirtyLines.all=true
+  end
+end
+
 
 function class_document:save()
   local priv=privates[self]
   local filePath=priv.fileDir..priv.fileName
+  local lines=priv.lines
 
   local file=io.open(filePath,"w")
   if file then
@@ -654,7 +706,12 @@ function class_document:save()
     end
     file:close()
   else
-    --TODO: error couldn't save - read only most likely?
+    if fs.isReadOnly(priv.fileDir..priv.fileName) then
+      --just do a saveAs if they try to save a read-only file
+      self:saveAs()
+    else
+      guiutils.messageBox("Error!","Unknown error saving file!",20)
+    end
   end
 end
 
@@ -970,32 +1027,16 @@ function new(filePath)
   local newDoc={}
   setmetatable(newDoc,class_document_meta)
 
-  local lines={}
-  do
-    local prevState={}
-    local file=io.open(filePath,"r")
-    if file~=nil then
-      for line in file:lines() do
-        lines[#lines+1]=hilight.hilightToSpans(line,prevState)
-        prevState=lines[#lines].state
-      end
-      file:close()
-    else
-      lines[1]={rawText="",state={}}
-    end
-  end
-
-  local fileDir,fileName = filePath:match("^(.-/?)([^/]+)$")
   local w,h=term.getSize()
 
   local newPriv={
       curPos = {x=1,y=1},
       textPos = {x=1,y=1},
       scrollPos = {x=1, y=1},
-      fileDir=fileDir,
-      fileName=fileName,
+      fileDir="/",
+--      fileName="",
       dirtyLines={all=true},
-      lines=lines,
+      lines={},
       selectBounds,
       viewRect={x=1,y=1,w=w,h=h},
 
@@ -1003,5 +1044,6 @@ function new(filePath)
 
   privates[newDoc]=newPriv
 
+  newDoc:load(filePath)
   return newDoc
 end

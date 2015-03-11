@@ -90,12 +90,11 @@ end
 local function saveSettings()
   local file=fs.open(settingsPath,"w")
   if not file then
-    --TODO: in-editor error display rather than crash, which might lose unsaved
-    --changes?
-    error("Couldn't open settings file to write!")
+    guiutils.messageBox("Error!","Couldn't open settings file to write!")
+  else
+    file.write(textutils.serialize(settings))
+    file.close()
   end
-  file.write(textutils.serialize(settings))
-  file.close()
 end
 
 --load saved config settings
@@ -656,7 +655,6 @@ drawMenu =function(menu)
       if menu.y+#menu > h then
         menu.y=h - #menu+1
       end
-      if not menu.x then error("wat ") end
       if menu.width + menu.x  > w then
         menu.x=w-menu.width
       end
@@ -879,12 +877,10 @@ local function buildMenu(menuDef,parent)
     menu.hkMap[hk:lower()]=i
     if item.type=="submenu" then
       item.submenu=buildMenu(item.submenu,menu)
-      if not item.submenu.x then error("wat "..item.label) end
       item.submenu.x,item.submenu.y=menu.x+item.width,menu.y+i-1
       if menuDef.horizontal then
         item.submenu.x,item.submenu.y=item.x,menu.y-#item.submenu
       end
-      if not item.submenu.x then error("wat "..item.label) end
     end
   end
   menu.width=longestLabel+2
