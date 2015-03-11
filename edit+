@@ -265,13 +265,17 @@ end
 
 
 local function save()
+  activeDoc:redrawDirty()
   redrawMenus()
   activeDoc:save()
+  activeDoc:dirtyAll()
 end
 
 local function saveAs()
+  activeDoc:redrawDirty()
   redrawMenus()
   activeDoc:saveAs()
+  activeDoc:dirtyAll()
 end
 
 local function load()

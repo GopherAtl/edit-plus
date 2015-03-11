@@ -664,7 +664,7 @@ function class_document:load(filePath)
 
   --is a file loaded now, with unsaved changes?
   if (#priv.lines>0 or priv.fileName) and priv.fileChanged then
-    if guiutils.messageBox("Discard?","You have unsaved changes; do you want to save them first?",20,{"Save","Discard"}) then
+    if guiutils.messageBox("Discard?","You have unsaved changes; do you want to save them first?",20,{"Save","Discard"})==1 then
       if not self:save() then
         return --hard cancel
       end
@@ -724,6 +724,7 @@ function class_document:save()
       file:write(priv.lines[i].rawText)
     end
     file:close()
+    priv.fileChanged = nil
     success=true
   else
     if fs.isReadOnly(priv.fileDir..priv.fileName) then
