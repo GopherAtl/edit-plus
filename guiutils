@@ -703,9 +703,8 @@ function getCenteredPos(w,h)
   return x,y
 end
 
-function messageBox(title,text,width,okLabel,cancelLabel)
-  cancelLabel=cancelLabel or "Cancel"
-  okLabel=okLabel or "Ok"
+function messageBox(title,text,width,buttonLabels)
+  buttonLabels=buttonLabels or {"Ok"}
 
   local lines={}
   for word in text:gmatch("%S+") do
@@ -727,26 +726,27 @@ function messageBox(title,text,width,okLabel,cancelLabel)
   dialog:addElement(newVLine(x+width-1,y,height))
   dialog:addElement(newLabel(x+2,y,width-4,title))
   for i=1,#lines do
-    dialog:addElement(newLabel(x+1,y+i,width-2,lines[i],"right",true))
+    dialog:addElement(newLabel(x+1,y+i,width-2,lines[i],"left",true))
   end
-  local okBtn=newButton(x+width-#okLabel-4, y+height-1, #okLabel+2, okLabel)
-  local cancelBtn=newButton(okBtn.x-#cancelLabel-3, y+height-1, #cancelLabel+2, cancelLabel)
-  dialog:addElement(okBtn)
-  dialog:addElement(cancelBtn)
 
-  local result
+  local choice=0
 
-  okBtn.onClick=function()
-      result=true
-      dialog:hide()
+  do
+    right=x+width-1
+    for i=1,#buttonLabels do
+      local button=newButton(right-#buttonLabels[i]-3,y+height-1,#buttonLabels[i]+2,buttonLabels[i])
+      right=button.x
+      button.onClick=function() choice=i dialog:hide() end
+      dialog:addElement(button)
     end
-  cancelBtn.onClick=function()
-      result=false
-      dialog:hide()
-    end
+  end
 
   dialog:runModal()
-  return result
+  return choice
+end
+
+function confirmDialog(title,text,width)
+  return messageBox(title,text,width,{"Ok","Cancel"})==1
 end
 
 
@@ -840,7 +840,7 @@ function filePicker(dir, filename, ext, load, heading)
   local result=nil
   okButton.onClick=function()
       if load or not fs.exists(dir..fileField.text) or
-          messageBox("Overwrite?","File already exists, overwrite?",20) then
+          confirmDialog("Overwrite?","File already exists, overwrite?",20) then
         result=dir..fileField.text
         dialog:hide()
       else
