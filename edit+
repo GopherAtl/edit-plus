@@ -208,6 +208,15 @@ end
 
 updateViewRect()
 
+local function redrawMenus()
+  activeMenu.dirty=true
+  for i=1,#guiElements do
+    if guiElements[i].dirty then
+      guiElements[i]:draw()
+    end
+  end
+end
+
 local function redrawLine(screenLine)
   activeDoc:redrawLine(screenLine)
 
@@ -257,11 +266,19 @@ end
 
 
 local function save()
+  redrawMenus()
   activeDoc:save()
 end
 
+local function saveAs()
+  redrawMenus()
+  activeDoc:saveAs()
+end
+
 local function load()
-  --TODO: file dialog
+  activeDoc:redrawDirty()
+  redrawMenus()
+  activeDoc:load()
 end
 
 local function new()
@@ -445,6 +462,9 @@ local commands = {
   ["save"] = {
       func=save,
     },
+  ["saveAs"] = {
+      func=saveAs,
+    },
   ["load"] = {
       func=load,
     },
@@ -513,8 +533,8 @@ local basicMenuDef={
     horizontal=true,
     {label="&File", type="submenu", submenu={
         {label="&Save", type="command", cmd="save", },
---      {label="Save &As", type="command", cmd="saveAs", },
---      {label="&Load", type="command", cmd="load", },
+      {label="Save &As...", type="command", cmd="saveAs", },
+      {label="&Open...", type="command", cmd="load", },
 --      {label="&New", type="command", cmd="new", },
         {label="&Run", type="command", cmd="run", },
         {label="E&xit", type="command", cmd="exit", },
@@ -560,6 +580,8 @@ local hotkeys = {
   ["?"]="help",
   ["m"]="toggleAdvancedMenu",
   ["h"]="toggleHideMenu",
+  ["a"]="saveAs",
+  ["o"]="load",
 }
 
 function drawMenuItem_color(item,x,y,width,isSelected)
@@ -799,6 +821,7 @@ local function updatePos(menu,x,y)
   end
 end
 
+
 local function buildMenu(menuDef,parent)
   local menu={hkMap={}}
   local id=menuDef.id or (#guiElements+1)
@@ -925,13 +948,10 @@ if not settings.hideMenus then
 end
 
 while running do
+  term.setTextColor(colors.white)
+  term.setBackgroundColor(colors.black)
   activeDoc:redrawDirty()
-  activeMenu.dirty=true
-  for i=1,#guiElements do
-    if guiElements[i].dirty then
-      guiElements[i]:draw()
-    end
-  end
+  redrawMenus()
   drawLineNum()
   doCursor()
   local e={os.pullEvent()}

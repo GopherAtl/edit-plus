@@ -856,7 +856,7 @@ function filePicker(dir, filename, ext, save, heading)
       end
 
       if not cancel then
-        result=path
+        result={dir,fileField.text}
         dialog:hide()
       else
         dialog:redraw()
@@ -870,7 +870,7 @@ function filePicker(dir, filename, ext, save, heading)
 
   dialog:runModal()
 
-  return result
+  return unpack(result or {})
 end
 
 if shell then
