@@ -980,7 +980,9 @@ function class_document:backspace()
     self:deleteSelection()
   else
     local textPos=priv.textPos
-    textPos.x=math.min(#priv.lines[textPos.y]+1,textPos.x)
+    if textPos.x>#priv.lines[textPos.y].rawText+1 then
+      self:setTextX(#priv.lines[textPos.y].rawText+1)
+    end
     local lines=priv.lines
     if textPos.x==1 then
       if textPos.y>1 then
@@ -1013,8 +1015,10 @@ function class_document:delete()
   else
     local textPos=priv.textPos
     local lines=priv.lines
-
     local curText=lines[textPos.y].rawText
+    if textPos.x>#curText+1 then
+      self:setTextX(#curText+1)
+    end
     if textPos.x==#curText+1 then
       if textPos.y<#lines then
         local nextLine=table.remove(lines,textPos.y+1)

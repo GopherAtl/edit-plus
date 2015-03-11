@@ -733,7 +733,7 @@ function messageBox(title,text,width,buttonLabels)
   local choice=0
 
   do
-    right=x+width-1
+    right=x+width+1
     for i=1,#buttonLabels do
       local button=newButton(right-#buttonLabels[i]-3,y+height-1,#buttonLabels[i]+2,buttonLabels[i])
       right=button.x
