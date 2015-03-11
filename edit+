@@ -43,7 +43,11 @@ end
 
 
 
-local function loadAPI(name, downloadIfMissing)
+local function loadAPI(name)
+  --if this is a first run after update, force reload all apis
+  if settings.freshUpdate then
+    _G[name]=nil
+  end
   if not _G[name] then
     --search for it
     local searchPaths={"/",shell.dir().."/","apis/",programDir,"/usr/lib/","/lib/"}
@@ -59,11 +63,7 @@ local function loadAPI(name, downloadIfMissing)
       end
     end
     if not _G[name] then
-      if downloadIfMissing then
-        grabFile(settings.branch,name,true)
-      else
-        error("Couldn't find "..name.." api!")
-      end
+      error("Couldn't find "..name.." api!")
     end
   end
 end
@@ -164,20 +164,11 @@ if args[1]=="--update" then
   return
 end
 
-if settings.freshUpdate then
-  if hilight then os.unloadAPI("hilight") end
-  if document then os.unloadAPI("document") end
-  settings.freshUpdate=nil
-  saveSettings()
-  --load, downloading if they're missing completely (as apis added in this update will be,
-  --since old update didn't know to download them)
-  loadAPI("hilight",true)
-  loadAPI("document",true)
-else
-  --load /without/ downloading
-  loadAPI("hilight")
-  loadAPI("document")
-end
+loadAPI("hilight")
+loadAPI("document")
+loadAPI("guiutils")
+settings.freshUpdate=nil
+
 
 local filename=args[1]
 
