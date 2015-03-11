@@ -1,20 +1,18 @@
-local selectedTextColor, selectedBGColor=colors.black,colors.white
-local defaultTextColor, defaultBGColor=colors.white,colors.black
 
 
-local function setColors(fg,bg)
-  term.setTextColor(fg)
-  term.setBackgroundColor(bg)
+local function setColors(nakedFG,nakedBG)
+  term.setTextColor(nakedFG)
+  term.setBackgroundColor(nakedBG)
 end
 
 function padString(str,width,side)
-  side=side and side:lower() or "right"
+  side=side and side:lower() or "left"
   if #str>width then
     --trim instead
     if side=="center" then
       local trim=(#str-width)/2
       str=str:sub(math.floor(trim)+1,#str-math.ceil(trim))
-    elseif side=="left" then
+    elseif side=="right" then
       str=str:sub(#str-width+1)
     else
       str=str:sub(1,width)
@@ -25,7 +23,7 @@ function padString(str,width,side)
   if side=="center" then
     local pad=(width-#str)/2
     str=(" "):rep(math.ceil(pad))..str..(" "):rep(math.floor(pad))
-  elseif side=="left" then
+  elseif side=="right" then
     str=(" "):rep(width-#str)..str
   else
     str=str..(" "):rep(width-#str)
@@ -33,18 +31,62 @@ function padString(str,width,side)
   return str
 end
 
+local basicStyle = {
+    --defaults
+    --  naked is for, in one sense, non-gui elements - interiors of text
+    -- fields and list boxes, in general the natural "client area" color.
+    nakedFG=colors.white,
+    nakedBG=colors.black,
+    -- gui color is for gui elements like buttons, window borders, etc. in their
+    -- natural (non-selected) state.
+    guiFG=colors.black,
+    guiBG=colors.white,
+    -- selected is used for dual purposes, focused gui elements, like buttons
+    --  which have focus, and user selection, such as the selected item in a list,
+    --  or block-selected text in an input field/box
+    selectedFG=colors.white,
+    selectedBG=colors.black,
 
+    -- inactive is used for focusable naked text when unfocused - i.e., text fields
+    inactiveFG=colors.white,
+    inactiveBG=colors.black,
+
+    --framing characters, added to focused elements in this style
+    frameL="[",
+    frameR="]",
+}
+
+local advStyle = {
+
+    nakedFG=colors.white,
+    nakedBG=colors.black,
+
+    guiFG=colors.white,
+    guiBG=colors.gray,
+
+    selectedFG=colors.white,
+    selectedBG=colors.blue,
+
+    inactiveFG=colors.lightGray,
+    inactiveBG=colors.black,
+
+    frameL="",
+    frameR="",
+}
+
+function applyStyle(obj,style)
+  for k,v in pairs(style) do
+    obj[k]=v
+  end
+end
+
+function applyDefaultStyle(obj)
+  applyStyle(obj,term.isColor() and advStyle or basicStyle)
+end
 
 --base gui zone
 do
   local class_guielement = {
-      --defaults
-      FG=colors.white,
-      BG=colors.black,
-      focusFG=colors.white,
-      focusBG=colors.black,
-      selectedFG=colors.black,
-      selectedBG=colors.white,
     }
   local class_guielement_meta = { __index=class_guielement }
 
@@ -112,18 +154,23 @@ do
   subclassGuiElement(class_label)
 
   function class_label:draw()
-    if self.colorInvert then
-      setColors(self.BG,self.FG)
+    if self.naked then
+      setColors(self.nakedFG,self.nakedBG)
     else
-      setColors(self.FG,self.BG)
+      setColors(self.guiFG,self.guiBG)
     end
     term.setCursorPos(self.x,self.y)
     term.write(padString(self.text,self.width,self.textAlign))
     self.dirty=false
   end
 
+  function class_label:setText(text)
+    self.text=text
+    self.dirty=true
+  end
 
-  function newLabel(x,y,w,text,textAlign,invertColors)
+
+  function newLabel(x,y,w,text,textAlign,naked)
     if type(textAlign)=="string" then
       textAlign=textAlign:lower()
     end
@@ -135,12 +182,13 @@ do
         y=y,
         width=w,
         height=1,
-        colorInvert=invertColors,
+        naked=naked,
         text=text or "label",
         dirty=true,
         textAlign=textAlign,
         visible=true,
       }
+    applyDefaultStyle(label)
     setmetatable(label,class_label_meta)
     return label
   end
@@ -153,24 +201,25 @@ do
   subclassGuiElement(class_hline)
 
   function class_hline:draw()
-    setColors(self.FG,self.FG)
+    setColors(self.guiFG,self.guiBG)
     term.setCursorPos(self.x,self.y)
     term.write((" "):rep(self.width))
     self.dirty=false
   end
 
   function newHLine(x,y,w,color)
-    local label={
+    local line={
         x=x,
         y=y,
         width=w,
         height=1,
-        BG=color,
+        nakedBG=color,
         dirty=true,
         visible=true,
       }
-    setmetatable(label,class_hline_meta)
-    return label
+    applyDefaultStyle(line)
+    setmetatable(line,class_hline_meta)
+    return line
   end
 end
 
@@ -182,7 +231,7 @@ do
   subclassGuiElement(class_vline)
 
   function class_vline:draw()
-    setColors(self.FG,self.BG)
+    setColors(self.guiFG,self.guiBG)
     for y=self.y,self.y+self.height-1 do
       term.setCursorPos(self.x,y)
       term.write((" "):rep(self.width))
@@ -191,17 +240,18 @@ do
   end
 
   function newVLine(x,y,h,color)
-    local label={
+    local line={
         x=x,
         y=y,
         width=1,
         height=h,
-        BG=color,
+        nakedBG=color,
         dirty=true,
         visible=true,
       }
-    setmetatable(label,class_vline_meta)
-    return label
+    setmetatable(line,class_vline_meta)
+    applyDefaultStyle(line)
+    return line
   end
 end
 
@@ -214,21 +264,19 @@ do
 
   function class_button:draw()
     term.setCursorPos(self.x,self.y)
-    if self.hasFocus==self.colorInvert then
-      setColors(self.FG,self.BG)
-      term.write("["..padString(self.text,self.width-2,"center").."]")
+    if self.hasFocus then
+      setColors(self.selectedFG,self.selectedBG)
+    elseif self.naked then
+      setColors(self.nakedFG,self.nakedBG)
     else
-      setColors(self.BG,self.FG)
-      term.write(" "..padString(self.text,self.width-2,"center").." ")
+      setColors(self.guiFG,self.guiBG)
     end
+
+    term.write(self.frameL..padString(self.text,self.width-#self.frameL-#self.frameR,"center")..self.frameR)
   end
 
   function class_button:doCursor()
-    if self.colorInvert then
-      setColors(self.BG,self.FG)
-    else
-      setColors(self.FG,self.BG)
-    end
+    setColors(self.selectedFG,self.selectedBG)
     term.setCursorPos(self.x+1,self.y)
     term.setCursorBlink(true)
   end
@@ -247,19 +295,20 @@ do
     end
   end
 
-  function newButton(x,y,w,text,invertColors)
+  function newButton(x,y,w,text,naked)
     local button={
         x=x,
         y=y,
         width=w,
         height=1,
-        colorInvert=invertColors,
+        naked=naked,
         text=text or "button",
         dirty=true,
         canTakeFocus=true,
         visible=true,
       }
     setmetatable(button,class_button_meta)
+    applyDefaultStyle(button)
     return button
   end
 end
@@ -273,19 +322,22 @@ do
 
   function class_textfield:draw()
     term.setCursorPos(self.x,self.y)
-    setColors(self.FG,self.BG)
+    local padL,padR=self.frameL,self.frameR
+    if self.hasFocus then
+      setColors(self.nakedFG,self.nakedBG)
+    else
+      padL,padR=(" "):rep(#padL),(" "):rep(#padR)
+      setColors(self.inactiveFG, self.inactiveBG)
+    end
+
     local visStr=self.text:sub(self.scrollPos)
 
-    if self.hasFocus then
-      term.write("["..padString(visStr,self.width-2).."]")
-    else
-      term.write(" "..padString(visStr,self.width-2).." ")
-    end
+    term.write(padL..padString(visStr,self.width-#self.frameL-#self.frameR)..padR)
   end
 
   function class_textfield:doCursor()
-    setColors(self.FG,self.BG)
-    term.setCursorPos(self.x+self.cursorPos-self.scrollPos+1,self.y)
+    setColors(self.nakedFG,self.nakedBG)
+    term.setCursorPos(self.x+self.cursorPos-self.scrollPos+#self.frameL,self.y)
     term.setCursorBlink(true)
   end
 
@@ -323,7 +375,7 @@ do
 
       handled=true
     elseif e[1]=="mouse_click" and e[2]==1 then
-      self.cursorPos=e[3]-self.x+self.scrollPos-1
+      self.cursorPos=math.min(#self.text+1,e[3]-self.x+self.scrollPos-#self.frameL)
       handled=true
     elseif e[1]=="mouse_scroll" then
       self.cursorPos=math.max(1,math.min(#self.text-self.scrollPos+2,self.cursorPos+e[2]))
@@ -331,11 +383,11 @@ do
     end
 
     if prevCurPos~=self.cursorPos then
-      if self.cursorPos<self.scrollPos then
-        self.scrollPos=self.cursorPos
+      if self.cursorPos<self.scrollPos+3 then
+        self.scrollPos=math.max(1,self.cursorPos-3)
         self.dirty=true
-      elseif self.cursorPos>self.scrollPos+self.width-1 then
-        self.scrollPos=self.cursorPos-self.width+1
+      elseif self.cursorPos>=self.scrollPos+self.width-1-#self.frameL-#self.frameR then
+        self.scrollPos=self.cursorPos-self.width+1+#self.frameL+#self.frameR
         self.dirty=true
       end
     end
@@ -365,6 +417,7 @@ do
       }
 
     setmetatable(field,class_textfield_meta)
+    applyDefaultStyle(field)
     return field
   end
 
@@ -379,6 +432,15 @@ do
   function class_dialog:draw()
     for i=1,#self.children do
       if self.children[i].dirty then
+        self.children[i]:draw()
+      end
+    end
+    self.dirty=false
+  end
+
+  function class_dialog:redraw()
+    for i=1,#self.children do
+      if self.children[i].visible then
         self.children[i]:draw()
       end
     end
@@ -516,6 +578,7 @@ do
     }
 
     setmetatable(dialog,class_dialog_meta)
+    applyDefaultStyle(dialog)
     return dialog
   end
 
@@ -531,16 +594,16 @@ do
     local list=self.list
     for i=1,self.height do
       local index=i+self.scrollPos-1
-      local pad,tail=" "," "
+      local head,tail=(" "):rep(#self.frameL),(" "):rep(#self.frameR)
+
       if index==self.selected then
-        pad=">"
-        tail="<"
+        head,tail=self.frameL,self.frameR
         setColors(self.selectedFG,self.selectedBG)
       else
-        setColors(self.FG,self.BG)
+        setColors(self.nakedFG,self.nakedBG)
       end
       term.setCursorPos(self.x,self.y+i-1)
-      term.write(padString(pad..(list[index] or "")..tail,self.width))
+      term.write(padString(head..(list[index] or "")..tail,self.width))
     end
     self.dirty=false
   end
@@ -558,7 +621,7 @@ do
 
   function class_listbox:select(index)
     local prevSel=self.selected
-    if index>0 and index<#self.list then
+    if index>0 and index<=#self.list then
       self.selected=index
       if index~=prevSel then
         self.dirty=true
@@ -620,7 +683,7 @@ do
         y=y,
         width=w,
         height=h,
-        list=list,
+        list=list or {},
         selected=nil,
         dirty=true,
         scrollPos=1,
@@ -628,15 +691,73 @@ do
         visible=true,
     }
     setmetatable(listbox,class_listbox_meta)
+    applyDefaultStyle(listbox)
     return listbox
   end
 end
 
+function getCenteredPos(w,h)
+  local termW,termH=term.getSize()
+  local x,y=math.floor((termW-w)/2)+1, math.floor((termH-h)/2)+1
+
+  return x,y
+end
+
+function messageBox(title,text,width,okLabel,cancelLabel)
+  cancelLabel=cancelLabel or "Cancel"
+  okLabel=okLabel or "Ok"
+
+  local lines={}
+  for word in text:gmatch("%S+") do
+    if #lines==0 or #lines[#lines]+1+#word>width-2 then
+      lines[#lines+1]=word
+    else
+      lines[#lines]=lines[#lines].." "..word
+    end
+  end
+
+  local height=#lines+2
+
+  local x,y=getCenteredPos(width,height)
+
+  local dialog=newDialog(x,y,width,height)
+  dialog:addElement(newHLine(x,y,width))
+  dialog:addElement(newHLine(x,y+height-1,width))
+  dialog:addElement(newVLine(x,y,height))
+  dialog:addElement(newVLine(x+width-1,y,height))
+  dialog:addElement(newLabel(x+2,y,width-4,title))
+  for i=1,#lines do
+    dialog:addElement(newLabel(x+1,y+i,width-2,lines[i],"right",true))
+  end
+  local okBtn=newButton(x+width-#okLabel-4, y+height-1, #okLabel+2, okLabel)
+  local cancelBtn=newButton(okBtn.x-#cancelLabel-3, y+height-1, #cancelLabel+2, cancelLabel)
+  dialog:addElement(okBtn)
+  dialog:addElement(cancelBtn)
+
+  local result
+
+  okBtn.onClick=function()
+      result=true
+      dialog:hide()
+    end
+  cancelBtn.onClick=function()
+      result=false
+      dialog:hide()
+    end
+
+  dialog:runModal()
+  return result
+end
+
 
 function filePicker(dir, filename, ext, load, heading)
-  dir=dir or ""
+  dir=dir or "/"
+  if not dir:match("/$") then
+    dir=dir.."/"
+  end
   filename=filename or "untitled"
   ext=ext or ""
+
   local buttonText
 
   if load then
@@ -651,61 +772,90 @@ function filePicker(dir, filename, ext, load, heading)
     buttonText="Save"
   end
 
-  local termW,termH=term.getSize()
   local myW,myH=26,13
-  local myX,myY=math.floor((termW-myW)/2)+1, math.floor((termH-myH)/2)+1
-  setColors(colors.black,colors.white)
-
-
-  local list=fs.list(dir)
+  local myX,myY=getCenteredPos(myW,myH)
 
   local dialog=newDialog(myX,myY,myW,myH)
 
   dialog:addElement(newVLine(myX, myY, myH, colors.white))
   dialog:addElement(newVLine(myX+myW-1,myY,myH,colors.white))
   dialog:addElement(newHLine(myX,myY+myH-1,myW,colors.white))
-  local fileList=newListbox(myX+1,myY+2,myW-2,9,list)
-  local okButton=newButton(myX+myW-7, myY+myH-1, 6, buttonText, true)
-  local cancelButton=newButton(myX+myW-16, myY+myH-1, 8, "Cancel", true)
+  local fileList=newListbox(myX+1,myY+2,myW-2,9)
+  local okButton=newButton(myX+myW-7, myY+myH-1, 6, buttonText)
+  local cancelButton=newButton(myX+myW-16, myY+myH-1, 8, "Cancel")
 
-  local titleLabel=newLabel(myX,myY,myW," "..heading,"right",true)
-  local dirLabel=newLabel(myX,myY+1,myW," dir:"..dir.."/","right",true)
-  local fileField=newTextField(myX+7,myY+11,myW-8)
+  local titleLabel=newLabel(myX+1,myY,myW-2,heading)
+  local dirLabel=newLabel(myX+1,myY+1,myW-2,"dir:"..dir)
+  local fileField=newTextField(myX+6,myY+11,myW-8)
   fileField:setText(filename)
 
 
   dialog:addElement(titleLabel)
   dialog:addElement(dirLabel)
-  dialog:addElement(newLabel(myX,myY+11,6," file:","right",true))
+  dialog:addElement(newLabel(myX+1,myY+11,5,"file:"))
 
   dialog:addElement(fileList)
   dialog:addElement(fileField)
   dialog:addElement(cancelButton)
   dialog:addElement(okButton)
 
+  local function buildFileList(dir)
+    dirLabel:setText(" dir:"..dir)
+    local list=fs.list(dir)
+    table.sort(list,function(a,b)
+        local aDir,bDir=fs.isDir(dir..a),fs.isDir(dir..b)
+        if aDir == bDir then
+          return a<b
+        else
+          return aDir
+        end
+      end)
+    local i=1
+    while list[i] and fs.isDir(dir..list[i]) do
+      list[i]=list[i].."/"
+      i=i+1
+    end
+    if dir~="/" then
+      table.insert(list,1,"..")
+    end
+    fileList.list=list
+    fileList.curPos=1
+    fileList.selected=nil
+    fileList.dirty=true
+  end
+  buildFileList(dir)
+
   fileList.onActivate=function(listbox, index, text)
-      --todo: check if dir, rebuild list if needed
-      --else
+      if fs.isDir(dir..text) then
+        dir="/"..fs.combine(dir,text)
+        if not dir:match("/$") then
+          dir=dir.."/"
+        end
+        buildFileList(dir)
+      else
         fileField:setText(text)
+      end
     end
 
   local result=nil
   okButton.onClick=function()
-      result=fileField.text
-      dialog:hide()
+      if load or not fs.exists(dir..fileField.text) or
+          messageBox("Overwrite?","File already exists, overwrite?",20) then
+        result=dir..fileField.text
+        dialog:hide()
+      else
+        dialog:redraw()
+      end
     end
   cancelButton.onClick=function()
-      result=false
       dialog:hide()
     end
 
   dialog:giveFocus()
 
-  setColors(colors.white,colors.black)
   dialog:runModal()
-  setColors(colors.white,colors.black)
-  print()
-  term.clear()
+
+  return result
 end
 
 if shell then
@@ -713,11 +863,22 @@ if shell then
   os.unloadAPI(guiutils)
   os.loadAPI("guiutils")
 
-  setColors(colors.white,colors.black)
-  term.clear()
 
   if guiutils then
-    guiutils.filePicker()
+    local _c=term.isColour
+    --[[
+    term.isColour=function() return false end
+    term.isColor=term.isColour
+    --]]
+    setColors(colors.white,colors.black)
+    term.clear()
+    local result=guiutils.filePicker("/","untitled",nil,false)
+    setColors(colors.white,colors.black)
+    print()
+    term.clear()
+    print("Result: "..tostring(result))
+    term.isColour=_c
+    term.isColor=_c
   else
     print("not loaded?")
   end
