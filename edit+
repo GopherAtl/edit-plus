@@ -258,7 +258,6 @@ end
 
 
 
-
 local function gotoLine(lineNum)
   activeDoc:setTextPos(1,lineNum)
 end
