@@ -520,6 +520,7 @@ do
     self.children[#self.children+1]=child
     if self.focusChild==nil and child.canTakeFocus then
       self.focusChild=#self.children
+      child:giveFocus()
       child.parent=self
     end
   end
@@ -750,7 +751,7 @@ function confirmDialog(title,text,width)
 end
 
 
-function filePicker(dir, filename, ext, load, heading)
+function filePicker(dir, filename, ext, save, heading)
   dir=dir or "/"
   if not dir:match("/$") then
     dir=dir.."/"
@@ -760,7 +761,7 @@ function filePicker(dir, filename, ext, load, heading)
 
   local buttonText
 
-  if load then
+  if not save then
     if not heading then
       heading="Open file..."
     end
@@ -839,9 +840,23 @@ function filePicker(dir, filename, ext, load, heading)
 
   local result=nil
   okButton.onClick=function()
-      if load or not fs.exists(dir..fileField.text) or
-          confirmDialog("Overwrite?","File already exists, overwrite?",20) then
-        result=dir..fileField.text
+      local cancel=false
+      local path=dir..fileField.text
+      if save then
+        if fs.isReadOnly(path) then
+          messageBox("Error!","Target file path is read-only!",20)
+          cancel=true
+        elseif fs.exists(dir..fileField.text) then
+          cancel=not confirmDialog("Overwrite?","File already exists, overwrite?",20)
+        end
+      else
+        if not fs.exists(dir..fileField.text) then
+          cancel=not confirmDialog("New File?","Specified file doesn't exist! Create it?",20)
+        end
+      end
+
+      if not cancel then
+        result=path
         dialog:hide()
       else
         dialog:redraw()
@@ -872,7 +887,7 @@ if shell then
     --]]
     setColors(colors.white,colors.black)
     term.clear()
-    local result=guiutils.filePicker("/","untitled",nil,false)
+    local result=guiutils.filePicker("/","untitled",nil,true)
     setColors(colors.white,colors.black)
     print()
     term.clear()
