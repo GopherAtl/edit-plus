@@ -531,9 +531,35 @@ function class_document:insertText(text)
   end
 
   --get the affected line and actual x position in line
-  local textPos= self:getTextPos()
-  local line=priv.lines[textPos.y]
-  --insert our char!
+  local textPos=priv.textPos
+  local lines=priv.lines
+  local line=lines[textPos.y]
+  --split inserted text into lines
+  local newLines={}
+  --append newline, for workaround of luaj pattern derpiness
+  text=text.."\n"
+  for l in text:gmatch("([^\n]*)\n") do
+    newLines[#newLines+1]=l
+  end
+  --append before cursor to first line, after to last line
+  newLines[1]=line.rawText:sub(1,textPos.x-1)..newLines[1]
+  local newX=#newLines[#newLines]+1
+  newLines[#newLines]=newLines[#newLines]..line.rawText:sub(textPos.x)
+  --insert lines after first
+  local prevState=line.state
+  for i=2,#newLines do
+    table.insert(lines,textPos.y+i-1,{state=hilight.copyState(prevState)})
+    self:updateLine(textPos.y+i-1,newLines[i],i==#newLines,true)
+  end
+  --now the first last, to propagate syntax changes
+  self:updateLine(textPos.y,newLines[1],false)
+  self:dirtyFrom(textPos.y-priv.scrollPos.y+1)
+  --new cursor pos will be in that last line
+  self:setTextPos(newX,textPos.y+#newLines-1)
+
+  --[[ TODO move this indent code somewhere else... updateLine? but.. no... will fuck with undo
+      if it happens "inline" with the insertion process.
+
   local cursorAdjust=#text
   local newText=line.rawText:sub(1,textPos.x-1)..text..line.rawText:sub(textPos.x)
   if textPos.y>1 and (newText:match("^%s*end%s*$") or newText:match("^%s*elseif.*$") or newText:match("^%s*else%s*$") or newText:match("^%s*until.*$")) then
@@ -549,9 +575,11 @@ function class_document:insertText(text)
 
   self:updateLine(textPos.y,newText)
   self:moveCursor(cursorAdjust,0)
+
   if priv.curPos.x-priv.scrollPos.x+1>priv.viewRect.w then
     self:setScrollX(priv.curPos.x-priv.viewRect.w+1)
   end
+  --]]
   priv.fileChanged=true
 end
 

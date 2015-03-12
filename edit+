@@ -122,45 +122,60 @@ end
 
 local args={...}
 
-
-if #args<1 then
-  print[[
+local function printUsage()
+  print[=[
   usage:
-edit+ <filename>
-edit+ --update
-edit+ --update beta]]
-return
+  edit+ [--debug] <filename>
+  edit+ --update [beta] ]=]
+  error()
 end
 
-if args[1]=="--update" then
-  local branch="master"
-  --update mahself!
-  if args[2] then
-    if args[2]=="beta" then
-      branch="dev"
-    else
-      print("unrecognized 2nd arg to --update.")
-      return
+
+if #args<1 then
+  printUsage()
+end
+
+local filenames={}
+
+for i=1,#args do
+  if args[i]=="--update" then
+    local branch="master"
+    --update mahself!
+    if args[i+1] then
+      if args[i+1]=="beta" then
+        branch="dev"
+      else
+        print("unrecognized 2nd arg to --update.")
+        return
+      end
     end
-  end
-  print("updating files...")
-  local path=shell.dir().."/"
+    print("updating files...")
+    local path=shell.dir().."/"
 
-  local filelist
-  do
-    local req=http.get("https://raw.githubusercontent.com/GopherAtl/edit-plus/"..branch.."/filelist.txt")
-    filelist=req.readAll()
-    req.close()
-  end
+    local filelist
+    do
+      local req=http.get("https://raw.githubusercontent.com/GopherAtl/edit-plus/"..branch.."/filelist.txt")
+      filelist=req.readAll()
+      req.close()
+    end
 
-  for ftype,fname in filelist:gmatch("(%w+):([%w%+]+)") do
-    grabFile(branch,fname)
+    for ftype,fname in filelist:gmatch("(%w+):([%w%+]+)") do
+      grabFile(branch,fname)
+    end
+    --note this in the settings, we'll force-reload the APIs
+    settings.freshUpdate=true
+    settings.branch=branch
+    saveSettings()
+    return
+  elseif args[i]=="--debug" then
+    --force loading APIs
+    os.unloadAPI("hilight")
+    os.unloadAPI("document")
+    os.unloadAPI("guiutils")
+  else
+    --anything else is a filename, we assume
+    filenames[#filenames+1]=args[i]
   end
-  --note this in the settings, we'll force-reload the APIs
-  settings.freshUpdate=true
-  settings.branch=branch
-  saveSettings()
-  return
 end
 
 loadAPI("hilight")
@@ -169,7 +184,10 @@ loadAPI("guiutils")
 settings.freshUpdate=nil
 
 
-local filename=args[1]
+local filename=filenames[1]
+if not filename then
+  printUsage()
+end
 
 local filePath=shell.dir().."/"..filename
 
