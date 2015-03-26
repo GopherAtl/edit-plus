@@ -1,0 +1,40 @@
+history - undo/redo features
+
+any changes are inserted as undo records. All changes fit in one of
+three categories: insert text, remove text, or replace text.
+
+insert text:
+text - the text to insert
+textPos - the position to insert text
+reverse - is the text inserted to the left (normal) or right (reverse) of the cursor?
+
+functions that do this:
+insertText - called by many other cases, can just update history once here
+paste - not currently calling insertText, might refactor?
+
+
+    --split this line at cursor
+    local before,after=lines[textPos.y].rawText:sub(1,textPos.x-1),lines[textPos.y].rawText:sub(textPos.x)
+    local newLines={}
+    --append first cb line to before for first line
+    newLines[1]=before..clip[1]
+    --rest will be new lines
+    for i=2,#clip do
+      newLines[i]=clip[i]
+    end
+    --append after to last
+    local newX=#newLines[#newLines]+1
+    newLines[#newLines]=newLines[#newLines]..after
+
+    --ok, update first line
+    --insert rest
+    local prevState=lines[textPos.y].state
+    for i=2,#newLines do
+      table.insert(lines,textPos.y+i-1,{state=hilight.copyState(prevState)})
+      self:updateLine(textPos.y+i-1,newLines[i],i==#newLines,true)
+    end
+    self:updateLine(textPos.y,newLines[1],false)
+    self:dirtyFrom(textPos.y-priv.scrollPos.y+1)
+    --new cursor pos will be in that last line
+    self:setTextPos(newX,textPos.y+#newLines-1)
+
