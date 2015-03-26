@@ -45,3 +45,7 @@ end
 
 grabFile("edit+")
 grabFile("hilight")
+if args[1] == "beta" then
+  grabFile("document")
+  grabFile("guiutils")
+end
