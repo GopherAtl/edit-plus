@@ -45,3 +45,5 @@ end
 
 grabFile("edit+")
 grabFile("hilight")
+grabFile("guiutils")
+grabFile("document
