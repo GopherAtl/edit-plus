@@ -82,7 +82,7 @@ end
 
 
 local function saveSettings()
-  local file=fs.open(settings.cfgdir.."/.edit+","w")
+  local file=fs.open(fs.combine(settings.bindir,".edit+"),"w")
   if not file then
     guiutils.messageBox("Error!","Couldn't open settings file to write!")
   else
@@ -92,7 +92,7 @@ local function saveSettings()
 end
 
 --load saved config settings
-if fs.exists(settings.cfgdir.."/.edit+") then
+if fs.exists(fs.combine(programDir,".edit+")) then
   loadSettings()
 else
   saveSettings()
