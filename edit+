@@ -7,10 +7,13 @@ local programDir=shell.getRunningProgram():match("^(.-/?)[^/]+$")
 local settings = {
   recentFiles = { },
   syntaxStyle = "pastebin",
+  bindir=programDir,
+  apidir=programDir,
+  cfgdir=programDir,
 }
 
 
-function grabFile(branch,name,load)
+function grabFile(branch,name,dir)
   write("downloading '"..name.."'...")
 
   local req=http.get("https://raw.githubusercontent.com/GopherAtl/edit-plus/"..branch.."/"..name)
@@ -28,7 +31,7 @@ function grabFile(branch,name,load)
   req.close()
 
 
-  local file=fs.open(programDir..name,"w")
+  local file=fs.open(dir..name,"w")
   if not file then
     error("Couldn't open file '"..name.."' for writing!")
   end
@@ -36,9 +39,6 @@ function grabFile(branch,name,load)
   file.write(text)
   file.close()
   print("success! "..#text.." bytes")
-  if load then
-    os.loadAPI(programDir..name)
-  end
 end
 
 
@@ -50,13 +50,8 @@ local function loadAPI(name)
   end
   if not _G[name] then
     --search for it
-    local searchPaths={"/",shell.dir().."/","apis/",programDir,"/usr/lib/","/lib/"}
+    local searchPaths={settings.apidir,"/",shell.dir().."/","apis/",programDir,"/usr/lib/","/lib/"}
     for i=1,#searchPaths do
-
-      if searchPaths[i]==nil then
-        print(shell.getRunningProgram())
-        print(shell.getRunningProgram():match("^(.-/)%w+$"))
-      end
       if fs.exists(searchPaths[i]..name) then
         os.loadAPI(searchPaths[i]..name)
         break
@@ -73,7 +68,7 @@ end
 local settingsPath
 
 local function loadSettings()
-  local file=fs.open(settingsPath,"r")
+  local file=fs.open(settings.cfgdir,"r")
   if not file then
     error("Couldn't open settings file to read!")
   end
@@ -88,7 +83,7 @@ end
 
 
 local function saveSettings()
-  local file=fs.open(settingsPath,"w")
+  local file=fs.open(settings.cfgdir.."/.edit+","w")
   if not file then
     guiutils.messageBox("Error!","Couldn't open settings file to write!")
   else
@@ -98,24 +93,10 @@ local function saveSettings()
 end
 
 --load saved config settings
-if fs.exists(".edit+") then
-  settingsPath=".edit+"
+if fs.exists(settings.cfgdir.."/.edit+") then
   loadSettings()
-elseif fs.exists("/etc") and fs.isDir("/etc") then
-  settingsPath="/etc/.edit+"
-  if fs.exists("/etc/.edit+") then
-    loadSettings()
-  else
-    --create file with defaults
-    saveSettings()
-  end
 else
-  settingsPath=programDir..".edit+"
-  if fs.exists(settingsPath) then
-    loadSettings()
-  else
-    saveSettings()
-  end
+  saveSettings()
 end
 
 
@@ -160,7 +141,7 @@ for i=1,#args do
     end
 
     for ftype,fname in filelist:gmatch("(%w+):([%w%+]+)") do
-      grabFile(branch,fname)
+      grabFile(branch,fname,ftype=="bin" and settings.bindir or settings.apidir)
     end
     --note this in the settings, we'll force-reload the APIs
     settings.freshUpdate=true
