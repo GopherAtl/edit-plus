@@ -56,7 +56,6 @@ end
 
 function grabFileText(name)
   write("downloading '"..name.."'...")
-  local path=(targetDir or shell.dir()).."/"
   local req=http.get("https://raw.githubusercontent.com/GopherAtl/edit-plus/"..branch.."/"..name)
   if req==nil then
     error("Cound't make request!")
@@ -70,12 +69,14 @@ function grabFileText(name)
   local text=req.readAll()
 
   req.close()
+  print("success! "..#text.." bytes")
   return text
 end
 
 function grabFile(name,targetDir)
 
   local text=grabFileText(name)
+  local path=(targetDir or shell.dir()).."/"
 
   local file=fs.open(path..name,"w")
   if not file then
@@ -84,24 +85,16 @@ function grabFile(name,targetDir)
 
   file.write(text)
   file.close()
-  print("success! "..#text.." bytes")
 end
 
 
 apidir=apidir or bindir
 cfgdir=cfgdir or bindir
 
-local req=http.get("https://raw.githubusercontent.com/GopherAtl/edit-plus/"..branch.."/"..name)
-
-local filelist=grabFileText("filelist")
-for type,file in filelist:gmatch("(...):(%S-)") do
-  grabFile(file,type=="bin" and bindir or apidir)
+local filelist=grabFileText("filelist.txt")
+for ftype,file in filelist:gmatch("(...):(%S*)") do
+  grabFile(file,ftype=="bin" and bindir or apidir)
 end
-
---grabFile("edit+",bindir)
---grabFile("hilight",apidir)
---grabFile("guiutils",apidir)
---grabFile("document",apidir)
 
 local settings = {
   recentFiles = { },
