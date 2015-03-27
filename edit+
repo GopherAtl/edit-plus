@@ -7,10 +7,12 @@ local programDir=shell.getRunningProgram():match("^(.-/?)[^/]+$")
 local settings = {
   recentFiles = { },
   syntaxStyle = "pastebin",
+  bindir="",
+  apidir="",
 }
 
 
-function grabFile(branch,name,load)
+function grabFile(branch,name,dir)
   write("downloading '"..name.."'...")
 
   local req=http.get("https://raw.githubusercontent.com/GopherAtl/edit-plus/"..branch.."/"..name)
@@ -28,7 +30,7 @@ function grabFile(branch,name,load)
   req.close()
 
 
-  local file=fs.open(programDir..name,"w")
+  local file=fs.open(dir..name,"w")
   if not file then
     error("Couldn't open file '"..name.."' for writing!")
   end
@@ -36,34 +38,26 @@ function grabFile(branch,name,load)
   file.write(text)
   file.close()
   print("success! "..#text.." bytes")
-  if load then
-    os.loadAPI(programDir..name)
-  end
 end
 
 
 
-local function loadAPI(name, downloadIfMissing)
+local function loadAPI(name)
+  --if this is a first run after update, force reload all apis
+  if settings.freshUpdate then
+    _G[name]=nil
+  end
   if not _G[name] then
     --search for it
-    local searchPaths={"/",shell.dir().."/","apis/",programDir,"/usr/lib/","/lib/"}
+    local searchPaths={settings.apidir,"/",shell.dir(),"/apis",programDir,"/usr/lib","/lib"}
     for i=1,#searchPaths do
-
-      if searchPaths[i]==nil then
-        print(shell.getRunningProgram())
-        print(shell.getRunningProgram():match("^(.-/)%w+$"))
-      end
-      if fs.exists(searchPaths[i]..name) then
-        os.loadAPI(searchPaths[i]..name)
+      if fs.exists(fs.combine(searchPaths[i],name)) then
+        os.loadAPI(fs.combine(searchPaths[i],name))
         break
       end
     end
     if not _G[name] then
-      if downloadIfMissing then
-        grabFile(settings.branch,name,true)
-      else
-        error("Couldn't find "..name.." api!")
-      end
+      error("Couldn't find "..name.." api!")
     end
   end
 end
@@ -73,7 +67,7 @@ end
 local settingsPath
 
 local function loadSettings()
-  local file=fs.open(settingsPath,"r")
+  local file=fs.open(fs.combine(programDir,".edit+"),"r")
   if not file then
     error("Couldn't open settings file to read!")
   end
@@ -88,35 +82,20 @@ end
 
 
 local function saveSettings()
-  local file=fs.open(settingsPath,"w")
+  local file=fs.open(fs.combine(settings.bindir,".edit+"),"w")
   if not file then
-    --TODO: in-editor error display rather than crash, which might lose unsaved
-    --changes?
-    error("Couldn't open settings file to write!")
+    guiutils.messageBox("Error!","Couldn't open settings file to write!")
+  else
+    file.write(textutils.serialize(settings))
+    file.close()
   end
-  file.write(textutils.serialize(settings))
-  file.close()
 end
 
 --load saved config settings
-if fs.exists(".edit+") then
-  settingsPath=".edit+"
+if fs.exists(fs.combine(programDir,".edit+")) then
   loadSettings()
-elseif fs.exists("/etc") and fs.isDir("/etc") then
-  settingsPath="/etc/.edit+"
-  if fs.exists("/etc/.edit+") then
-    loadSettings()
-  else
-    --create file with defaults
-    saveSettings()
-  end
 else
-  settingsPath=programDir..".edit+"
-  if fs.exists(settingsPath) then
-    loadSettings()
-  else
-    saveSettings()
-  end
+  saveSettings()
 end
 
 
