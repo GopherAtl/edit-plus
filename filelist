@@ -1,0 +1,4 @@
+bin:edit+
+api:document
+api:hilight
+api:guiutils
