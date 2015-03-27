@@ -5,19 +5,57 @@ end
 local branch="master"
 
 local args={...}
-if #args>0 then
-  if #args==1 and args[1]=="beta" then
-    branch="dev"
-  else
-    error("unknown arguments!")
+
+local verToBranch={release="master",beta="dev"}
+
+local bindir, apidir, cfgdir=""
+
+local function fixDir(dir)
+  local d=dir:match("^(.-)[/|\\]?$")
+  return d
+end
+
+for i=1,#args do
+  local arg,val=args[i]:match("-(%w+)=?(.*)")
+  if arg then
+    arg=arg:lower()
+    if arg=="ver" then
+      if val then
+        val=val:lower()
+        if verToBranch[val] then
+          branch=verToBranch[val]
+        else
+          error("invalid version '"..val.."'")
+        end
+      else
+        error("Must specify a version 'release' or 'beta' to argument 'ver'!")
+      end
+    elseif arg=="apidir" then
+      if fs.exists(val) then
+        apidir=fixDir(val)
+      else
+        error("Specified apidir does not exist!")
+      end
+    elseif arg=="bindir" then
+      if fs.exists(val) then
+        bindir=fixDir(val)
+      else
+        error("Specified apidir does not exist!")
+      end
+    elseif arg=="cfgdir" then
+      if fs.exists(val) then
+        cfgdir=fixDir(val)
+      else
+        error("specified cfgdir does not exist!")
+      end
+    else
+      error("unknown argument '"..arg.."'")
+    end
   end
 end
 
-local path=shell.dir().."/"
-
-function grabFile(name)
+function grabFileText(name)
   write("downloading '"..name.."'...")
-
   local req=http.get("https://raw.githubusercontent.com/GopherAtl/edit-plus/"..branch.."/"..name)
   if req==nil then
     error("Cound't make request!")
@@ -31,7 +69,14 @@ function grabFile(name)
   local text=req.readAll()
 
   req.close()
+  print("success! "..#text.." bytes")
+  return text
+end
 
+function grabFile(name,targetDir)
+
+  local text=grabFileText(name)
+  local path=(targetDir or shell.dir()).."/"
 
   local file=fs.open(path..name,"w")
   if not file then
@@ -40,12 +85,30 @@ function grabFile(name)
 
   file.write(text)
   file.close()
-  print("success! "..#text.." bytes")
 end
 
-grabFile("edit+")
-grabFile("hilight")
-if args[1] == "beta" then
-  grabFile("document")
-  grabFile("guiutils")
+
+apidir=apidir or bindir
+cfgdir=cfgdir or bindir
+
+local filelist=grabFileText("filelist.txt")
+for ftype,file in filelist:gmatch("(...):(%S*)") do
+  grabFile(file,ftype=="bin" and bindir or apidir)
+end
+
+local settings = {
+  recentFiles = { },
+  syntaxStyle = "pastebin",
+  bindir=bindir,
+  apidir=apidir,
+  cfgdir=cfgdir,
+}
+
+
+local file=fs.open(cfgdir.."/.edit+","w")
+if not file then
+  error("Error!","Couldn't open settings file to write!")
+else
+  file.write(textutils.serialize(settings))
+  file.close()
 end
