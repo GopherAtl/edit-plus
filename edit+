@@ -9,7 +9,6 @@ local settings = {
   syntaxStyle = "pastebin",
   bindir=programDir,
   apidir=programDir,
-  cfgdir=programDir,
 }
 
 
@@ -50,10 +49,10 @@ local function loadAPI(name)
   end
   if not _G[name] then
     --search for it
-    local searchPaths={settings.apidir,"/",shell.dir().."/","apis/",programDir,"/usr/lib/","/lib/"}
+    local searchPaths={settings.apidir,"/",shell.dir(),"/apis",programDir,"/usr/lib","/lib"}
     for i=1,#searchPaths do
-      if fs.exists(searchPaths[i]..name) then
-        os.loadAPI(searchPaths[i]..name)
+      if fs.exists(fs.combine(searchPaths[i],name)) then
+        os.loadAPI(fs.combine(searchPaths[i],name))
         break
       end
     end
@@ -68,7 +67,7 @@ end
 local settingsPath
 
 local function loadSettings()
-  local file=fs.open(settings.cfgdir,"r")
+  local file=fs.open(fs.combine(programDir,".edit+"),"r")
   if not file then
     error("Couldn't open settings file to read!")
   end
