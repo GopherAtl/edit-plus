@@ -736,7 +736,7 @@ local function handleMenuEvent(menu, e)
           menu.dirty=true
           handled = true
           if btn==1 then
-            menu:doThing()
+            menu:doThing(i)
           end
           break
         end
@@ -745,11 +745,11 @@ local function handleMenuEvent(menu, e)
         clkY>=menu.y and clkY<menu.y+#menu and
         clkX>=menu.x and clkX<menu.x+menu.width then
       menu.selected=clkY-menu.y+1
-      if btn==1 and menu[menu.selected].type=="command" then
-        menu:doThing()
+      if btn==1 then
+        menu:doThing(menu.selected)
         handled = true
       end
-    else
+    elseif not menu.childActive then
       menu:hide()
     end
   elseif not menu.childActive and e[1]=="paste" then
