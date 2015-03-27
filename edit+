@@ -800,6 +800,7 @@ local function doThing(menu,thing)
         if item.type=="command" then
           command=item.cmd
         elseif item.type=="submenu" then
+          menu.selected=thing
           menu:draw()
           command=nil
           item.submenu:show()
