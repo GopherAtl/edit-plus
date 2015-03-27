@@ -331,7 +331,7 @@ end
 function class_document:dirtyFrom(index)
   local priv=privates[self]
   local dirtyLines=priv.dirtyLines
-  for y=priv.curPos.y,priv.viewRect.h do
+  for y=index,priv.viewRect.h do
     dirtyLines[y]=true
   end
 end
