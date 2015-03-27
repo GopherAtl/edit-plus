@@ -8,7 +8,7 @@ local args={...}
 
 local verToBranch={release="master",beta="dev"}
 
-local bindir, apidir=""
+local bindir, apidir
 
 local function fixDir(dir)
   local d=dir:match("^(.-)[/|\\]?$")
@@ -70,9 +70,9 @@ end
 function grabFile(name,targetDir)
 
   local text=grabFileText(name)
-  local path=(targetDir or shell.dir()).."/"
+  local path=(targetDir or shell.dir())
 
-  local file=fs.open(path..name,"w")
+  local file=fs.open(fs.combine(path,name),"w")
   if not file then
     error("Couldn't open file '"..name.."' for writing!")
   end
@@ -81,7 +81,7 @@ function grabFile(name,targetDir)
   file.close()
 end
 
-
+bindir=bindir or shell.dir()
 apidir=apidir or bindir
 
 local filelist=grabFileText("filelist.txt")
