@@ -873,8 +873,8 @@ function class_document:toggleBlockSelecting()
     priv.blockSelecting=false
   else
     priv.blockSelecting=true
-    priv.blockStart=curToTextPos(priv.curPos)
-    self:updateSelect({blockStart,blockStart})
+    priv.blockStart=self:curToTextPos(priv.curPos)
+    self:updateSelect({priv.blockStart,priv.blockStart})
   end
 end
 
