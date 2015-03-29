@@ -64,10 +64,17 @@ end
 
 
 
-local settingsPath
+local settingsPath=".edit+"
+if fs.exists("/usr/etc") and fs.isDir("/usr/etc") then
+  settingsPath="/usr/etc/.edit+"
+elseif fs.exists("/etc") and fs.isDir("/etc") then
+  settingsPath="/etc/.edit+"
+else
+  settingsPath=fs.combine(programDir,".edit+")
+end
 
 local function loadSettings()
-  local file=fs.open(fs.combine(programDir,".edit+"),"r")
+  local file=fs.open(settingsPath,"r")
   if not file then
     error("Couldn't open settings file to read!")
   end
@@ -82,7 +89,7 @@ end
 
 
 local function saveSettings()
-  local file=fs.open(fs.combine(settings.bindir,".edit+"),"w")
+  local file=fs.open(settingsPath,"w")
   if not file then
     guiutils.messageBox("Error!","Couldn't open settings file to write!")
   else
@@ -92,7 +99,7 @@ local function saveSettings()
 end
 
 --load saved config settings
-if fs.exists(fs.combine(programDir,".edit+")) then
+if fs.exists(settingsPath) then
   loadSettings()
 else
   saveSettings()
