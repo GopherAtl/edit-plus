@@ -417,6 +417,35 @@ end
 
 
 --[[------------------
+  indentLine(lineNum)
+  adjusts indentation of line to be "correct" based on previous and current line
+]]
+function class_document:indentLine(lineNum)
+  local priv=privates[self]
+  --first line has indent of 0, always
+  local indent=0
+  local cur=priv.lines[lineNum].rawText
+  local curIndent=#cur:match("^(%s*)")
+  if lineNum>1 then
+    local pre=priv.lines[lineNum-1].rawText
+    indent=#pre:match("^%s*")
+    if pre:match("do%s*$") or pre:match("then%s*$") or pre:match("repeat%s*$") or pre:match("else%s*$") then
+      indent=indent+2
+    end
+    if cur:match("^%s*end%s*$") or cur:match("^%s*elseif.*$") or cur:match("^%s*else%s*$") or cur:match("^%s*until.*$") then
+      indent=indent-2
+    end
+    cur=cur:gsub("^(%s*)",(" "):rep(indent))
+  end
+  if indent~=curIndent then
+    self:updateLine(lineNum,cur,true)
+  end
+
+  return indent - curIndent
+end
+
+
+--[[------------------
   scrollY
   scrolls vertically by some amount; if leaveCursor is true, the cursor
   retains it's original text position
@@ -546,19 +575,29 @@ function class_document:insertText(text)
   local newX=#newLines[#newLines]+1
   newLines[#newLines]=newLines[#newLines]..line.rawText:sub(textPos.x)
   --insert lines after first
+  self:updateLine(textPos.y,newLines[1],true)
+  if #newLines>1 then
+    self:indentLine(textPos.y)
+  end
   local prevState=line.state
   for i=2,#newLines do
     table.insert(lines,textPos.y+i-1,{state=hilight.copyState(prevState)})
-    self:updateLine(textPos.y+i-1,newLines[i],i==#newLines,true)
+    --replace whatever indentation is there now with the "correct" indentation
+    --insert line!
+    self:updateLine(textPos.y+i-1,newLines[i],true)
+    local change=self:indentLine(textPos.y+i-1)
+    if i==#newLines then
+      newX=newX+change
+    end
+
   end
   --now the first last, to propagate syntax changes
-  self:updateLine(textPos.y,newLines[1],false)
+  self:updateLine(textPos.y,lines[textPos.y].rawText,false)
   self:dirtyFrom(textPos.y-priv.scrollPos.y+1)
   --new cursor pos will be in that last line
   self:setTextPos(newX,textPos.y+#newLines-1)
 
-  --[[ TODO move this indent code somewhere else... updateLine? but.. no... will fuck with undo
-      if it happens "inline" with the insertion process.
+  --[[ TODO
 
   local cursorAdjust=#text
   local newText=line.rawText:sub(1,textPos.x-1)..text..line.rawText:sub(textPos.x)
@@ -796,15 +835,15 @@ function class_document:copy()
     local lines=priv.lines
     local startY,endY=selectBounds[1].y,selectBounds[2].y
     local selectBounds=selectBounds
-    local clip={}
+    local clip=""
     if startY==endY then
-      clip[1]=lines[startY].rawText:sub(selectBounds[1].x,selectBounds[2].x)
+      clip=lines[startY].rawText:sub(selectBounds[1].x,selectBounds[2].x)
     else
-      clip[1]=lines[startY].rawText:sub(selectBounds[1].x)
+      clip=lines[startY].rawText:sub(selectBounds[1].x)
       for y=startY+1,endY-1 do
-        clip[#clip+1]=lines[y].rawText
+        clip=clip.."\n"..lines[y].rawText
       end
-      clip[#clip+1]=lines[endY].rawText:sub(1,selectBounds[2].x)
+      clip=clip.."\n"..lines[endY].rawText:sub(1,selectBounds[2].x)
     end
 
     clipboard.set(clip)
@@ -829,37 +868,7 @@ end
 function class_document:paste()
   local clip=clipboard.get()
   if clip then
-    local priv=privates[self]
-    local lines=priv.lines
-    local textPos=priv.textPos
-
-    --delete selection, if any, as we'll replace
-    self:deleteSelection()
-
-    --split this line at cursor
-    local before,after=lines[textPos.y].rawText:sub(1,textPos.x-1),lines[textPos.y].rawText:sub(textPos.x)
-    local newLines={}
-    --append first cb line to before for first line
-    newLines[1]=before..clip[1]
-    --rest will be new lines
-    for i=2,#clip do
-      newLines[i]=clip[i]
-    end
-    --append after to last
-    local newX=#newLines[#newLines]+1
-    newLines[#newLines]=newLines[#newLines]..after
-
-    --ok, update first line
-    --insert rest
-    local prevState=lines[textPos.y].state
-    for i=2,#newLines do
-      table.insert(lines,textPos.y+i-1,{state=hilight.copyState(prevState)})
-      self:updateLine(textPos.y+i-1,newLines[i],i==#newLines,true)
-    end
-    self:updateLine(textPos.y,newLines[1],false)
-    self:dirtyFrom(textPos.y-priv.scrollPos.y+1)
-    --new cursor pos will be in that last line
-    self:setTextPos(newX,textPos.y+#newLines-1)
+    self:insertText(clip)
   end
 end
 
@@ -957,6 +966,7 @@ function class_document:cursorUp(amt)
 end
 
 
+
 --[[------------------
   insertNewline
   inserts a newline at the cursor
@@ -976,10 +986,8 @@ function class_document:insertNewline()
   local pre,post=curText:sub(1,textPos.x-1),curText:sub(textPos.x)
   self:dirtyFrom(priv.curPos.y)
 
-  local indent=(" "):rep(#(pre:match("^%s+") or ""))
-  if pre:match("do%s*$") or pre:match("then%s*$") or pre:match("repeat%s*$") or pre:match("else%s*") then
-    indent=indent.."  "
-  end
+  local indent=(" "):rep(self:getIndent(textPos.y+1))
+
   self:updateLine(textPos.y,pre,true)
   table.insert(lines,textPos.y+1,{state={}})
   self:updateLine(textPos.y+1,indent..post)

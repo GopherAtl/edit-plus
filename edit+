@@ -994,7 +994,7 @@ while running do
       elseif key==keys.leftCtrl then
         activeMenu:show()
       elseif key==keys.enter then
-        activeDoc:insertNewline()
+        activeDoc:insertText("\n")
 
       elseif key==keys.backspace then
         activeDoc:backspace()
