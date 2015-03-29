@@ -983,7 +983,7 @@ function class_document:insertNewline()
   self:updateLine(textPos.y,pre,true)
   table.insert(lines,textPos.y+1,{state={}})
   self:updateLine(textPos.y+1,indent..post)
-  self:setCurPos(#indent+1,textPos.y+1)
+  self:setTextPos(#indent+1,textPos.y+1)
 end
 
 --[[------------------

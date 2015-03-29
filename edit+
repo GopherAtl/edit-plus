@@ -293,9 +293,11 @@ local function exitEditor()
     local choice=guiutils.messageBox("Save changes?","You have unsaved changes.",26,{"Save","Discard","Cancel"})
     if choice==1 then
       if not activeDoc:save() then
+        activeDoc:dirtyAll()
         return
       end
     elseif choice==3 then
+      activeDoc:dirtyAll()
       return
     end
   end
@@ -465,7 +467,7 @@ local function run()
     end
   end
   term.clear()
-  activeDoc:dirtyFrom(1)
+  activeDoc:dirtyAll()
 end
 
 
@@ -944,7 +946,7 @@ guiElements[#guiElements+1]=advancedMenu
 advancedMenu.id=#guiElements
 
 mainMenu=buildMenu(basicMenuDef)
-activeDoc:dirtyFrom(1)
+activeDoc:dirtyAll()
 term.setCursorBlink(true)
 
 if settings.advancedMenus then
@@ -1043,7 +1045,7 @@ while running do
       activeDoc:dragSelect({x=math.min(math.max(e[3],1),viewRect.w),y=math.min(math.max(e[4],1),viewRect.h)})
     elseif e[1]=="term_resize" then
       updateViewRect()
-      activeDoc:dirtyFrom(1)
+      activeDoc:dirtyAll()
       mainMenu:updatePos(1,h)
       advancedMenu.y=h
     end
